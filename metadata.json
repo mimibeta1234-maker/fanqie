@@ -1,0 +1,6 @@
+{
+  "name": "Fanqie Novel Downloader",
+  "description": "Tool tải truyện Fanqie full chương, tự động vượt khóa đọc trên web để tải trọn bộ miễn phí định dạng TXT và EPUB.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
