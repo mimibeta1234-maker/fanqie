@@ -10,6 +10,7 @@ import { SavedBooksModal } from './components/SavedBooksModal';
 import { PlotSearchModal } from './components/PlotSearchModal';
 import { Book, Catalog, Chapter, DownloadTaskStatus, SavedBook } from './types';
 import { getSavedBooks, saveBook, removeSavedBook, isBookSaved } from './utils/savedBooks';
+import { ChapterBookmark, getBookmarks, toggleChapterBookmark } from './utils/chapterBookmarks';
 import { AlertTriangle } from 'lucide-react';
 
 export default function App() {
@@ -22,6 +23,10 @@ export default function App() {
   // Saved books state
   const [savedBooks, setSavedBooks] = useState<SavedBook[]>(() => getSavedBooks());
   const [isSavedBooksOpen, setIsSavedBooksOpen] = useState<boolean>(false);
+
+  // Chapter bookmarks state
+  const [bookmarkedChapters, setBookmarkedChapters] = useState<ChapterBookmark[]>([]);
+  const [catalogInitialMarkedFilter, setCatalogInitialMarkedFilter] = useState<boolean>(false);
 
   // Plot search state
   const [isPlotSearchOpen, setIsPlotSearchOpen] = useState<boolean>(false);
@@ -55,6 +60,42 @@ export default function App() {
   useEffect(() => {
     handleLoadBook('7069948840148732967');
   }, []);
+
+  // Update bookmarked chapters when currentBook changes
+  useEffect(() => {
+    if (currentBook?.book_id) {
+      setBookmarkedChapters(getBookmarks(currentBook.book_id));
+    } else {
+      setBookmarkedChapters([]);
+    }
+  }, [currentBook?.book_id]);
+
+  // Set of marked item ids for fast lookup
+  const markedItemIds = React.useMemo(() => {
+    return new Set(bookmarkedChapters.map(b => b.itemId));
+  }, [bookmarkedChapters]);
+
+  // Toggle bookmark for a chapter
+  const handleToggleMarkChapter = (chapter: Chapter, chapterIndex: number) => {
+    if (!currentBook) return;
+    const { list } = toggleChapterBookmark(currentBook.book_id, chapter, chapterIndex);
+    setBookmarkedChapters(list);
+  };
+
+  // Toggle bookmark directly from reader modal
+  const handleToggleMarkFromReader = () => {
+    if (!currentBook || !readerState.itemId) return;
+    const idx = catalog?.chapter_list?.findIndex(c => c.item_id === readerState.itemId) ?? -1;
+    const chapter = (idx !== -1 && catalog?.chapter_list?.[idx]) || {
+      item_id: readerState.itemId,
+      title: readerState.title,
+      volume_title: '',
+      char_count: 0,
+      update_time: ''
+    };
+    const { list } = toggleChapterBookmark(currentBook.book_id, chapter, idx !== -1 ? idx + 1 : 1);
+    setBookmarkedChapters(list);
+  };
 
   // Poll active download task
   useEffect(() => {
@@ -278,10 +319,18 @@ export default function App() {
             <BookDetailCard
               book={currentBook}
               totalChapters={totalChapters}
-              onOpenCatalog={() => setIsCatalogOpen(true)}
+              onOpenCatalog={() => {
+                setCatalogInitialMarkedFilter(false);
+                setIsCatalogOpen(true);
+              }}
               onOpenPlotSearch={() => setIsPlotSearchOpen(true)}
               isSaved={isCurrentBookSaved}
               onToggleSave={handleToggleSaveBook}
+              markedChaptersCount={bookmarkedChapters.length}
+              onOpenMarkedChapters={() => {
+                setCatalogInitialMarkedFilter(true);
+                setIsCatalogOpen(true);
+              }}
             />
 
             <DownloadPanel
@@ -303,6 +352,9 @@ export default function App() {
         bookTitle={currentBook?.book_name || ""}
         onPreviewChapter={handlePreviewChapter}
         onOpenPlotSearch={() => setIsPlotSearchOpen(true)}
+        markedItemIds={markedItemIds}
+        onToggleMarkChapter={handleToggleMarkChapter}
+        initialShowMarkedOnly={catalogInitialMarkedFilter}
       />
 
       {/* Plot Search Modal */}
@@ -342,6 +394,8 @@ export default function App() {
         itemId={readerState.itemId}
         loading={readerState.loading}
         error={readerState.error}
+        isMarked={markedItemIds.has(readerState.itemId)}
+        onToggleMark={handleToggleMarkFromReader}
       />
     </div>
   );

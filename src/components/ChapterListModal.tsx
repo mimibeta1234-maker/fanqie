@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { X, Search, BookOpen, ArrowUpDown, Copy, Check, Loader2, Sparkles } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { X, Search, BookOpen, ArrowUpDown, Copy, Check, Loader2, FileSearch, Bookmark } from 'lucide-react';
 import { Chapter } from '../types';
 
 interface ChapterListModalProps {
@@ -9,6 +9,9 @@ interface ChapterListModalProps {
   bookTitle: string;
   onPreviewChapter: (chapter: Chapter) => void;
   onOpenPlotSearch?: () => void;
+  markedItemIds?: Set<string>;
+  onToggleMarkChapter?: (chapter: Chapter, chapterIndex: number) => void;
+  initialShowMarkedOnly?: boolean;
 }
 
 // Helper to convert an integer (1 - 9999) to standard Chinese numeral
@@ -42,11 +45,22 @@ export const ChapterListModal: React.FC<ChapterListModalProps> = ({
   chapters,
   bookTitle,
   onPreviewChapter,
-  onOpenPlotSearch
+  onOpenPlotSearch,
+  markedItemIds = new Set<string>(),
+  onToggleMarkChapter,
+  initialShowMarkedOnly = false
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedVolume, setSelectedVolume] = useState<string>('all');
   const [sortAsc, setSortAsc] = useState<boolean>(true);
+  const [showMarkedOnly, setShowMarkedOnly] = useState<boolean>(initialShowMarkedOnly);
+
+  // Sync initialShowMarkedOnly when modal is opened
+  useEffect(() => {
+    if (isOpen) {
+      setShowMarkedOnly(initialShowMarkedOnly);
+    }
+  }, [isOpen, initialShowMarkedOnly]);
 
   // Copying states
   const [copyingItemId, setCopyingItemId] = useState<string | null>(null);
@@ -75,6 +89,11 @@ export const ChapterListModal: React.FC<ChapterListModalProps> = ({
     }));
 
     let list = indexed.filter(c => {
+      // Marked only filter
+      if (showMarkedOnly && !markedItemIds.has(c.item_id)) {
+        return false;
+      }
+
       // Volume filter
       if (selectedVolume !== 'all' && c.volume_title !== selectedVolume) {
         return false;
@@ -115,7 +134,7 @@ export const ChapterListModal: React.FC<ChapterListModalProps> = ({
       list = [...list].reverse();
     }
     return list;
-  }, [chapters, searchTerm, selectedVolume, sortAsc]);
+  }, [chapters, searchTerm, selectedVolume, sortAsc, showMarkedOnly, markedItemIds]);
 
   // Handle quick copy chapter
   const handleQuickCopy = async (chapter: Chapter, index: number) => {
@@ -174,7 +193,7 @@ export const ChapterListModal: React.FC<ChapterListModalProps> = ({
                 className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-xs font-medium border border-red-200 transition-colors cursor-pointer"
                 title="Tìm kiếm tình tiết trong nội dung chương"
               >
-                <Sparkles className="w-3.5 h-3.5" />
+                <FileSearch className="w-3.5 h-3.5" />
                 <span>Tìm tình tiết</span>
               </button>
             )}
@@ -210,14 +229,30 @@ export const ChapterListModal: React.FC<ChapterListModalProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end flex-wrap">
+            {/* Filter Marked Only */}
+            <button
+              type="button"
+              onClick={() => setShowMarkedOnly(!showMarkedOnly)}
+              className={`flex items-center gap-1.5 text-xs px-2.5 py-2 rounded-lg font-medium border transition-colors cursor-pointer ${
+                showMarkedOnly
+                  ? 'bg-amber-100 text-amber-900 border-amber-300 shadow-xs'
+                  : 'bg-stone-50 hover:bg-stone-100 text-stone-700 border-stone-200'
+              }`}
+              title="Lọc chỉ hiển thị các chương bạn đã đánh dấu"
+              id="btn-filter-marked-chapters"
+            >
+              <Bookmark className={`w-3.5 h-3.5 ${showMarkedOnly || markedItemIds.size > 0 ? 'text-amber-600 fill-amber-500' : 'text-stone-400'}`} />
+              <span>Đã dấu {markedItemIds.size > 0 ? `(${markedItemIds.size})` : ''}</span>
+            </button>
+
             {volumes.length > 1 && (
               <select
                 value={selectedVolume}
                 onChange={(e) => setSelectedVolume(e.target.value)}
                 className="text-xs bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-2 text-stone-700 focus:outline-none focus:ring-2 focus:ring-red-500 max-w-[150px] truncate"
               >
-                <option value="all">Tất cả các cuốn ({volumes.length})</option>
+                <option value="all">Tất cả cuốn ({volumes.length})</option>
                 {volumes.map((v) => (
                   <option key={v} value={v}>
                     {v}
@@ -243,7 +278,7 @@ export const ChapterListModal: React.FC<ChapterListModalProps> = ({
                 }}
                 className="sm:hidden flex items-center gap-1 text-xs px-2.5 py-2 bg-red-50 text-red-700 border border-red-200 rounded-lg font-medium"
               >
-                <Sparkles className="w-3.5 h-3.5" />
+                <FileSearch className="w-3.5 h-3.5" />
                 <span>Tìm tình tiết</span>
               </button>
             )}
@@ -254,27 +289,48 @@ export const ChapterListModal: React.FC<ChapterListModalProps> = ({
         <div className="flex-1 overflow-y-auto p-4 divide-y divide-stone-100">
           {filteredChapters.length === 0 ? (
             <div className="text-center py-16 text-stone-400 text-sm">
-              Không tìm thấy chương nào phù hợp với &quot;{searchTerm}&quot;
+              {showMarkedOnly ? (
+                <div>
+                  <Bookmark className="w-8 h-8 text-stone-300 mx-auto mb-2" />
+                  <p>Chưa có chương nào được đánh dấu trong truyện này.</p>
+                  <button
+                    onClick={() => setShowMarkedOnly(false)}
+                    className="mt-3 text-xs text-red-600 hover:underline font-medium"
+                  >
+                    Xem tất cả các chương
+                  </button>
+                </div>
+              ) : (
+                `Không tìm thấy chương nào phù hợp với "${searchTerm}"`
+              )}
             </div>
           ) : (
             filteredChapters.map((ch) => {
               const isCopied = copiedItemId === ch.item_id;
               const isCopying = copyingItemId === ch.item_id;
+              const isMarked = markedItemIds.has(ch.item_id);
 
               return (
                 <div
                   key={ch.item_id}
-                  className="py-3 px-2 flex items-center justify-between hover:bg-stone-50 rounded-lg transition-colors group"
+                  className={`py-3 px-2 flex items-center justify-between hover:bg-stone-50 rounded-lg transition-colors group ${
+                    isMarked ? 'bg-amber-50/60 border-l-2 border-l-amber-500 pl-2.5' : ''
+                  }`}
                 >
                   <div className="flex items-center gap-3 overflow-hidden pr-3">
                     <span className="text-xs font-mono text-stone-400 w-10 text-right shrink-0">
                       {ch.originalIndex}
                     </span>
                     <div className="truncate">
-                      <p className="text-sm font-medium text-stone-800 truncate group-hover:text-red-600 transition-colors">
+                      <p className={`text-sm font-medium truncate group-hover:text-red-600 transition-colors ${
+                        isMarked ? 'text-amber-950 font-semibold' : 'text-stone-800'
+                      }`}>
                         {ch.title}
                       </p>
                       <p className="text-xs text-stone-400 flex items-center gap-2 mt-0.5">
+                        {isMarked && (
+                          <span className="text-amber-600 font-medium">Đã đánh dấu •</span>
+                        )}
                         {ch.volume_title && <span>{ch.volume_title}</span>}
                         {ch.char_count > 0 && <span>• {ch.char_count.toLocaleString()} chữ</span>}
                         {ch.update_time && <span>• {ch.update_time}</span>}
@@ -283,6 +339,27 @@ export const ChapterListModal: React.FC<ChapterListModalProps> = ({
                   </div>
 
                   <div className="flex items-center gap-1.5 shrink-0">
+                    {/* Mark chapter button */}
+                    {onToggleMarkChapter && (
+                      <button
+                        onClick={() => onToggleMarkChapter(ch, ch.originalIndex)}
+                        className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+                          isMarked
+                            ? 'bg-amber-100 text-amber-900 border-amber-300 font-medium'
+                            : 'bg-stone-50 hover:bg-stone-100 text-stone-500 border-stone-200'
+                        }`}
+                        title={isMarked ? "Bỏ đánh dấu chương này" : "Đánh dấu chương này"}
+                        id={`btn-mark-chapter-${ch.item_id}`}
+                      >
+                        <Bookmark
+                          className={`w-3.5 h-3.5 ${
+                            isMarked ? 'fill-amber-500 text-amber-600' : 'text-stone-400'
+                          }`}
+                        />
+                        <span className="hidden sm:inline">{isMarked ? "Đã dấu" : "Dấu"}</span>
+                      </button>
+                    )}
+
                     {/* Quick copy button */}
                     <button
                       onClick={() => handleQuickCopy(ch, ch.originalIndex)}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BookOpen, User, List, Bookmark, Sparkles } from 'lucide-react';
+import { BookOpen, User, List, Bookmark, FileSearch, BookmarkCheck } from 'lucide-react';
 import { Book } from '../types';
 
 interface BookDetailCardProps {
@@ -9,6 +9,8 @@ interface BookDetailCardProps {
   onOpenPlotSearch?: () => void;
   isSaved?: boolean;
   onToggleSave?: () => void;
+  markedChaptersCount?: number;
+  onOpenMarkedChapters?: () => void;
 }
 
 export const BookDetailCard: React.FC<BookDetailCardProps> = ({
@@ -17,7 +19,9 @@ export const BookDetailCard: React.FC<BookDetailCardProps> = ({
   onOpenCatalog,
   onOpenPlotSearch,
   isSaved = false,
-  onToggleSave
+  onToggleSave,
+  markedChaptersCount = 0,
+  onOpenMarkedChapters
 }) => {
   const [showFullAbstract, setShowFullAbstract] = useState<boolean>(false);
 
@@ -129,8 +133,21 @@ export const BookDetailCard: React.FC<BookDetailCardProps> = ({
                 id="btn-open-plot-search"
                 title="Tìm kiếm tình tiết trong nội dung các chương"
               >
-                <Sparkles className="w-3.5 h-3.5" />
+                <FileSearch className="w-3.5 h-3.5" />
                 <span>Tìm theo tình tiết</span>
+              </button>
+            )}
+
+            {markedChaptersCount > 0 && onOpenMarkedChapters && (
+              <button
+                type="button"
+                onClick={onOpenMarkedChapters}
+                className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-lg text-xs font-medium transition-colors border border-amber-300 flex items-center gap-1.5 cursor-pointer"
+                id="btn-open-marked-chapters"
+                title="Xem các chương bạn đã đánh dấu"
+              >
+                <BookmarkCheck className="w-3.5 h-3.5 text-amber-600" />
+                <span>Đã dấu {markedChaptersCount} chương</span>
               </button>
             )}
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Moon, Sun, Type, BookOpen, AlertCircle, Copy, Check } from 'lucide-react';
+import { X, Moon, Sun, Type, BookOpen, AlertCircle, Copy, Check, Bookmark } from 'lucide-react';
 
 interface ReaderModalProps {
   isOpen: boolean;
@@ -9,6 +9,8 @@ interface ReaderModalProps {
   itemId: string;
   loading: boolean;
   error?: string;
+  isMarked?: boolean;
+  onToggleMark?: () => void;
 }
 
 export const ReaderModal: React.FC<ReaderModalProps> = ({
@@ -18,7 +20,9 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
   content,
   itemId,
   loading,
-  error
+  error,
+  isMarked = false,
+  onToggleMark
 }) => {
   const [fontSize, setFontSize] = useState<number>(18);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
@@ -90,6 +94,24 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
             >
               {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
+
+            {/* Mark / Bookmark chapter button */}
+            {onToggleMark && (
+              <button
+                onClick={onToggleMark}
+                className={`p-2 rounded-lg border transition-all cursor-pointer ${
+                  isMarked
+                    ? 'border-amber-400 bg-amber-500/10 text-amber-500'
+                    : isDarkMode
+                    ? 'border-stone-700 bg-stone-800 text-stone-300 hover:text-amber-400'
+                    : 'border-stone-200 bg-white text-stone-600 hover:text-amber-600'
+                }`}
+                title={isMarked ? "Bỏ đánh dấu chương này" : "Đánh dấu chương này"}
+                id="btn-mark-chapter"
+              >
+                <Bookmark className={`w-4 h-4 ${isMarked ? 'fill-amber-500 text-amber-500' : ''}`} />
+              </button>
+            )}
 
             {/* Copy button */}
             <button

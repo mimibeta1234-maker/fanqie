@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { X, Search, BookOpen, Copy, Check, Sparkles, AlertCircle, Loader2, StopCircle } from 'lucide-react';
+import { X, Search, BookOpen, Copy, Check, FileSearch, AlertCircle, Loader2, StopCircle } from 'lucide-react';
 import { Chapter, PlotMatch } from '../types';
 
 interface PlotSearchModalProps {
@@ -183,7 +183,7 @@ export const PlotSearchModal: React.FC<PlotSearchModalProps> = ({
         <div className="flex items-center justify-between px-6 py-4 border-b border-stone-200 bg-stone-50">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-red-600 text-white flex items-center justify-center shadow-xs">
-              <Sparkles className="w-4 h-4" />
+              <FileSearch className="w-4 h-4" />
             </div>
             <div>
               <h3 className="font-bold text-stone-900 text-base sm:text-lg">
