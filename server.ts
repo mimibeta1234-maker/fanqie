@@ -6,6 +6,7 @@ import {
   getBookInfo,
   getCatalog,
   getChapter,
+  getChapters,
   formatChapterText,
   searchBooks
 } from "./server/fanqieCore";
@@ -109,6 +110,57 @@ async function startServer() {
     } catch (err: any) {
       console.error("Chapter preview error:", err);
       res.status(500).json({ success: false, error: err.message || "Không thể giải mã chương này" });
+    }
+  });
+
+  // Search plot / keyword within chapters
+  app.post("/api/book/search-plot", async (req, res) => {
+    try {
+      const { bookId, query, itemIds, startIndex = 1 } = req.body;
+      if (!bookId || !query || !itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
+        return res.status(400).json({ success: false, error: "Thiếu thông tin tìm kiếm" });
+      }
+
+      const cleanBookId = parseBookId(bookId);
+      const q = String(query).trim().toLowerCase();
+      if (!q) {
+        return res.json({ success: true, matches: [] });
+      }
+
+      // Fetch batch of chapters
+      const batchResult: any = await getChapters(itemIds, cleanBookId);
+      const matches = [];
+
+      for (let i = 0; i < itemIds.length; i++) {
+        const id = String(itemIds[i]);
+        const ch = batchResult[id];
+        if (!ch || !ch.content) continue;
+
+        const cleanText = formatChapterText(ch.content, "");
+        const lowerText = cleanText.toLowerCase();
+        const foundIdx = lowerText.indexOf(q);
+
+        if (foundIdx !== -1) {
+          // Extract snippet of ~140 chars around the match
+          const startSnippet = Math.max(0, foundIdx - 40);
+          const endSnippet = Math.min(cleanText.length, foundIdx + q.length + 80);
+          let snippet = cleanText.substring(startSnippet, endSnippet).replace(/\s+/g, ' ').trim();
+          if (startSnippet > 0) snippet = "..." + snippet;
+          if (endSnippet < cleanText.length) snippet = snippet + "...";
+
+          matches.push({
+            itemId: id,
+            chapterIndex: startIndex + i,
+            title: ch.title || `Chương ${startIndex + i}`,
+            snippet
+          });
+        }
+      }
+
+      res.json({ success: true, matches });
+    } catch (err: any) {
+      console.error("Plot search error:", err);
+      res.status(500).json({ success: false, error: err.message || "Lỗi khi tìm kiếm theo tình tiết" });
     }
   });
 

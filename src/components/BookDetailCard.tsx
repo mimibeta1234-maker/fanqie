@@ -1,17 +1,23 @@
 import React, { useState } from 'react';
-import { BookOpen, User, List } from 'lucide-react';
+import { BookOpen, User, List, Bookmark, Sparkles } from 'lucide-react';
 import { Book } from '../types';
 
 interface BookDetailCardProps {
   book: Book;
   totalChapters: number;
   onOpenCatalog: () => void;
+  onOpenPlotSearch?: () => void;
+  isSaved?: boolean;
+  onToggleSave?: () => void;
 }
 
 export const BookDetailCard: React.FC<BookDetailCardProps> = ({
   book,
   totalChapters,
-  onOpenCatalog
+  onOpenCatalog,
+  onOpenPlotSearch,
+  isSaved = false,
+  onToggleSave
 }) => {
   const [showFullAbstract, setShowFullAbstract] = useState<boolean>(false);
 
@@ -103,8 +109,8 @@ export const BookDetailCard: React.FC<BookDetailCardProps> = ({
             </div>
           )}
 
-          {/* Action */}
-          <div className="mt-3">
+          {/* Action buttons */}
+          <div className="mt-3.5 flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={onOpenCatalog}
@@ -114,6 +120,40 @@ export const BookDetailCard: React.FC<BookDetailCardProps> = ({
               <List className="w-3.5 h-3.5 text-stone-500" />
               <span>Mục lục & Đọc thử</span>
             </button>
+
+            {onOpenPlotSearch && (
+              <button
+                type="button"
+                onClick={onOpenPlotSearch}
+                className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-xs font-medium transition-colors border border-red-200 flex items-center gap-1.5 cursor-pointer"
+                id="btn-open-plot-search"
+                title="Tìm kiếm tình tiết trong nội dung các chương"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Tìm theo tình tiết</span>
+              </button>
+            )}
+
+            {onToggleSave && (
+              <button
+                type="button"
+                onClick={onToggleSave}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border flex items-center gap-1.5 cursor-pointer ${
+                  isSaved
+                    ? 'bg-amber-50 text-amber-900 border-amber-300'
+                    : 'bg-white hover:bg-stone-100 text-stone-600 border-stone-200'
+                }`}
+                id="btn-toggle-save-book"
+                title={isSaved ? "Bỏ lưu truyện này" : "Lưu truyện vào danh sách yêu thích"}
+              >
+                <Bookmark
+                  className={`w-3.5 h-3.5 ${
+                    isSaved ? 'text-amber-600 fill-amber-500' : 'text-stone-400'
+                  }`}
+                />
+                <span>{isSaved ? "Đã lưu truyện" : "Lưu truyện"}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

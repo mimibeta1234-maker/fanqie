@@ -6,7 +6,10 @@ import { DownloadPanel } from './components/DownloadPanel';
 import { ChapterListModal } from './components/ChapterListModal';
 import { ReaderModal } from './components/ReaderModal';
 import { SearchResultsModal } from './components/SearchResultsModal';
-import { Book, Catalog, Chapter, DownloadTaskStatus } from './types';
+import { SavedBooksModal } from './components/SavedBooksModal';
+import { PlotSearchModal } from './components/PlotSearchModal';
+import { Book, Catalog, Chapter, DownloadTaskStatus, SavedBook } from './types';
+import { getSavedBooks, saveBook, removeSavedBook, isBookSaved } from './utils/savedBooks';
 import { AlertTriangle } from 'lucide-react';
 
 export default function App() {
@@ -15,6 +18,13 @@ export default function App() {
   const [downloadTask, setDownloadTask] = useState<DownloadTaskStatus | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Saved books state
+  const [savedBooks, setSavedBooks] = useState<SavedBook[]>(() => getSavedBooks());
+  const [isSavedBooksOpen, setIsSavedBooksOpen] = useState<boolean>(false);
+
+  // Plot search state
+  const [isPlotSearchOpen, setIsPlotSearchOpen] = useState<boolean>(false);
 
   // Modals state
   const [isCatalogOpen, setIsCatalogOpen] = useState<boolean>(false);
@@ -216,9 +226,31 @@ export default function App() {
 
   const totalChapters = catalog?.chapter_list?.length || currentBook?.chapter_count || 0;
 
+  // Saved books management
+  const isCurrentBookSaved = currentBook ? isBookSaved(currentBook.book_id) : false;
+
+  const handleToggleSaveBook = () => {
+    if (!currentBook) return;
+    if (isCurrentBookSaved) {
+      const updated = removeSavedBook(currentBook.book_id);
+      setSavedBooks(updated);
+    } else {
+      const updated = saveBook(currentBook);
+      setSavedBooks(updated);
+    }
+  };
+
+  const handleRemoveSavedBook = (id: string) => {
+    const updated = removeSavedBook(id);
+    setSavedBooks(updated);
+  };
+
   return (
     <div className="min-h-screen bg-[#faf9f6] text-stone-900 flex flex-col font-sans">
-      <Navbar />
+      <Navbar
+        onOpenSavedBooks={() => setIsSavedBooksOpen(true)}
+        savedCount={savedBooks.length}
+      />
 
       <main className="flex-1 max-w-2xl w-full mx-auto px-4 py-6 space-y-4">
         {/* Search Bar */}
@@ -247,6 +279,9 @@ export default function App() {
               book={currentBook}
               totalChapters={totalChapters}
               onOpenCatalog={() => setIsCatalogOpen(true)}
+              onOpenPlotSearch={() => setIsPlotSearchOpen(true)}
+              isSaved={isCurrentBookSaved}
+              onToggleSave={handleToggleSaveBook}
             />
 
             <DownloadPanel
@@ -267,6 +302,26 @@ export default function App() {
         chapters={catalog?.chapter_list || []}
         bookTitle={currentBook?.book_name || ""}
         onPreviewChapter={handlePreviewChapter}
+        onOpenPlotSearch={() => setIsPlotSearchOpen(true)}
+      />
+
+      {/* Plot Search Modal */}
+      <PlotSearchModal
+        isOpen={isPlotSearchOpen}
+        onClose={() => setIsPlotSearchOpen(false)}
+        bookId={currentBook?.book_id || ""}
+        bookTitle={currentBook?.book_name || ""}
+        chapters={catalog?.chapter_list || []}
+        onPreviewChapter={handlePreviewChapter}
+      />
+
+      {/* Saved Books Modal */}
+      <SavedBooksModal
+        isOpen={isSavedBooksOpen}
+        onClose={() => setIsSavedBooksOpen(false)}
+        savedBooks={savedBooks}
+        onSelectBook={handleLoadBook}
+        onRemoveBook={handleRemoveSavedBook}
       />
 
       {/* Search Results Modal */}

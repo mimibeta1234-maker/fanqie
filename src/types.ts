@@ -41,3 +41,23 @@ export interface DownloadTaskStatus {
   speed: string;
   errorMessage?: string;
 }
+
+export interface SavedBook {
+  book_id: string;
+  book_name: string;
+  author: string;
+  thumb_url: string;
+  score?: string;
+  category?: string;
+  tags?: string;
+  chapter_count?: number;
+  saved_at: number;
+}
+
+export interface PlotMatch {
+  itemId: string;
+  chapterIndex: number;
+  title: string;
+  snippet: string;
+  matchCount?: number;
+}
