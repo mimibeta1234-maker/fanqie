@@ -10,7 +10,9 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
-  Trash2
+  Trash2,
+  Columns2,
+  AlignLeft
 } from 'lucide-react';
 import { compareTextsWithChapters, OverallComparison, ChapterDiff } from '../utils/textDiff';
 
@@ -65,6 +67,11 @@ export const CompareView: React.FC = () => {
   const [isInputsExpanded, setIsInputsExpanded] = useState<boolean>(() => {
     return initialDraft?.isInputsExpanded !== undefined ? initialDraft.isInputsExpanded : true;
   });
+
+  // Diff Display Mode: 'inline' (track changes) vs 'split' (side-by-side 2 columns)
+  const [diffViewMode, setDiffViewMode] = useState<'inline' | 'split'>('inline');
+  // Filter for inline display: 'all' | 'new_only' | 'old_only'
+  const [filterDisplay, setFilterDisplay] = useState<'all' | 'new_only' | 'old_only'>('all');
 
   // Auto-compare whenever textA or textB changes (Debounced 150ms)
   useEffect(() => {
@@ -563,6 +570,36 @@ export const CompareView: React.FC = () => {
                     </div>
 
                     <div className="flex items-center gap-2">
+                      {/* View Mode Toggle */}
+                      <div className="inline-flex items-center p-0.5 bg-stone-100 rounded-lg border border-stone-200 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => setDiffViewMode('inline')}
+                          className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors cursor-pointer ${
+                            diffViewMode === 'inline'
+                              ? 'bg-white text-stone-900 font-semibold shadow-2xs'
+                              : 'text-stone-500 hover:text-stone-800'
+                          }`}
+                          title="Hiển thị theo dõi sửa đổi trong dòng văn bản"
+                        >
+                          <AlignLeft className="w-3.5 h-3.5" />
+                          <span>Nội dòng</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDiffViewMode('split')}
+                          className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors cursor-pointer ${
+                            diffViewMode === 'split'
+                              ? 'bg-white text-stone-900 font-semibold shadow-2xs'
+                              : 'text-stone-500 hover:text-stone-800'
+                          }`}
+                          title="So sánh song song 2 cột Bản A và Bản B"
+                        >
+                          <Columns2 className="w-3.5 h-3.5" />
+                          <span>Song song (2 cột)</span>
+                        </button>
+                      </div>
+
                       <button
                         onClick={() =>
                           handleCopy(
@@ -587,46 +624,152 @@ export const CompareView: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Diff Color Legend */}
-                  <div className="px-4 py-2 border-b border-stone-100 bg-white flex flex-wrap items-center gap-3 text-xs">
-                    <span className="text-stone-400 font-medium">Chú thích:</span>
-                    <span className="inline-flex items-center gap-1 text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded text-[11px]">
-                      <span className="line-through">Nội dung bị xóa / thay thế (Bản A)</span>
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-[11px]">
-                      <span>+ Nội dung mới thêm vào (Bản B)</span>
-                    </span>
+                  {/* Diff Color Legend & Filter */}
+                  <div className="px-4 py-2 border-b border-stone-100 bg-white flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span className="text-stone-400 font-medium">Chú thích:</span>
+                      <span className="inline-flex items-center gap-1 text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded text-[11px]">
+                        <span className="line-through">[-Từ bị xóa/thay thế (A)-]</span>
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-[11px]">
+                        <span>[+Từ mới thêm vào (B)+]</span>
+                      </span>
+                    </div>
+
+                    {diffViewMode === 'inline' && (
+                      <div className="flex items-center gap-1 text-[11px]">
+                        <span className="text-stone-400">Hiển thị:</span>
+                        <button
+                          type="button"
+                          onClick={() => setFilterDisplay('all')}
+                          className={`px-2 py-0.5 rounded border transition-colors cursor-pointer ${
+                            filterDisplay === 'all'
+                              ? 'bg-stone-800 text-white border-stone-800 font-medium'
+                              : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
+                          }`}
+                        >
+                          Cả hai bản
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFilterDisplay('new_only')}
+                          className={`px-2 py-0.5 rounded border transition-colors cursor-pointer ${
+                            filterDisplay === 'new_only'
+                              ? 'bg-emerald-700 text-white border-emerald-700 font-medium'
+                              : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                          }`}
+                          title="Chỉ hiển thị bản B sạch sau khi chỉnh sửa"
+                        >
+                          Chỉ Bản mới (B)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFilterDisplay('old_only')}
+                          className={`px-2 py-0.5 rounded border transition-colors cursor-pointer ${
+                            filterDisplay === 'old_only'
+                              ? 'bg-red-700 text-white border-red-700 font-medium'
+                              : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+                          }`}
+                          title="Chỉ hiển thị bản A gốc trước khi chỉnh sửa"
+                        >
+                          Chỉ Bản gốc (A)
+                        </button>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Diff Content Box - Clean Vietnamese typography in font-sans */}
-                  <div className="flex-1 overflow-y-auto p-4 sm:p-5 font-sans text-sm leading-relaxed whitespace-pre-wrap select-text text-stone-800 bg-[#faf9f6]">
-                    {selectedChapter.diffChunks.map((chunk, cIdx) => {
-                      if (chunk.type === 'equal') {
-                        return <span key={cIdx}>{chunk.value}</span>;
-                      } else if (chunk.type === 'delete') {
-                        return (
-                          <span
-                            key={cIdx}
-                            className="bg-red-100 text-red-800 line-through rounded-xs px-1 mx-0.5 decoration-red-600/70"
-                            title="Đã xóa ở bản B"
-                          >
-                            {chunk.value}
+                  {/* Diff Content Box */}
+                  {diffViewMode === 'inline' ? (
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-5 font-sans text-sm leading-relaxed whitespace-pre-wrap select-text text-stone-800 bg-[#faf9f6]">
+                      {selectedChapter.diffChunks.map((chunk, cIdx) => {
+                        if (chunk.type === 'equal') {
+                          return <span key={cIdx}>{chunk.value}</span>;
+                        } else if (chunk.type === 'delete') {
+                          if (filterDisplay === 'new_only') return null;
+                          return (
+                            <span
+                              key={cIdx}
+                              className="bg-red-100/90 text-red-800 line-through rounded-xs px-1 mx-0.5 decoration-red-600/70 border border-red-200/50"
+                              title="Bị xóa ở bản B"
+                            >
+                              {chunk.value}
+                            </span>
+                          );
+                        } else if (chunk.type === 'insert') {
+                          if (filterDisplay === 'old_only') return null;
+                          return (
+                            <span
+                              key={cIdx}
+                              className="bg-emerald-100/90 text-emerald-950 font-semibold rounded-xs px-1 mx-0.5 border-b-2 border-emerald-500"
+                              title="Thêm mới ở bản B"
+                            >
+                              {chunk.value}
+                            </span>
+                          );
+                        }
+                        return null;
+                      })}
+                    </div>
+                  ) : (
+                    /* Side-by-Side Split View */
+                    <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-stone-200 bg-[#faf9f6]">
+                      {/* Left: Original (A) */}
+                      <div className="flex flex-col h-full overflow-hidden">
+                        <div className="px-3 py-1.5 bg-red-50/70 border-b border-stone-200 text-xs font-bold text-red-800 flex items-center justify-between">
+                          <span>Bản Gốc (A): {fileNameA || 'Văn bản A'}</span>
+                          <span className="text-[11px] font-normal text-stone-500">
+                            {selectedChapter.charCountA.toLocaleString()} ký tự
                           </span>
-                        );
-                      } else if (chunk.type === 'insert') {
-                        return (
-                          <span
-                            key={cIdx}
-                            className="bg-emerald-100 text-emerald-900 font-medium rounded-xs px-1 mx-0.5 border-b-2 border-emerald-500"
-                            title="Được thêm mới ở bản B"
-                          >
-                            {chunk.value}
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 font-sans text-sm leading-relaxed whitespace-pre-wrap select-text text-stone-800">
+                          {selectedChapter.diffChunks.map((chunk, cIdx) => {
+                            if (chunk.type === 'equal') {
+                              return <span key={cIdx}>{chunk.value}</span>;
+                            } else if (chunk.type === 'delete') {
+                              return (
+                                <span
+                                  key={cIdx}
+                                  className="bg-red-100 text-red-800 line-through rounded-xs px-1 mx-0.5 decoration-red-600/70"
+                                  title="Đã bị xóa hoặc thay thế"
+                                >
+                                  {chunk.value}
+                                </span>
+                              );
+                            }
+                            return null;
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Right: Revised (B) */}
+                      <div className="flex flex-col h-full overflow-hidden">
+                        <div className="px-3 py-1.5 bg-emerald-50/70 border-b border-stone-200 text-xs font-bold text-emerald-800 flex items-center justify-between">
+                          <span>Bản Mới (B): {fileNameB || 'Văn bản B'}</span>
+                          <span className="text-[11px] font-normal text-stone-500">
+                            {selectedChapter.charCountB.toLocaleString()} ký tự
                           </span>
-                        );
-                      }
-                      return null;
-                    })}
-                  </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 font-sans text-sm leading-relaxed whitespace-pre-wrap select-text text-stone-800">
+                          {selectedChapter.diffChunks.map((chunk, cIdx) => {
+                            if (chunk.type === 'equal') {
+                              return <span key={cIdx}>{chunk.value}</span>;
+                            } else if (chunk.type === 'insert') {
+                              return (
+                                <span
+                                  key={cIdx}
+                                  className="bg-emerald-100 text-emerald-950 font-semibold rounded-xs px-1 mx-0.5 border-b-2 border-emerald-500"
+                                  title="Được sửa hoặc thêm mới"
+                                >
+                                  {chunk.value}
+                                </span>
+                              );
+                            }
+                            return null;
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="flex-1 flex items-center justify-center p-8 text-stone-400 text-sm font-sans">

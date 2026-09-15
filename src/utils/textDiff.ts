@@ -1,3 +1,5 @@
+import { diffLines, diffWordsWithSpace } from 'diff';
+
 export interface ChapterDiff {
   chapterNumber: number;
   titleA: string;
@@ -95,8 +97,9 @@ export function splitIntoChapters(fullText: string): ParsedChapter[] {
 }
 
 /**
- * Fast Longest Common Subsequence (LCS) / Diff algorithm on character tokens or line tokens.
- * Computes difference chunks, identical characters count, additions, deletions.
+ * High-precision Word-level and Hierarchical Line+Word Diff algorithm.
+ * Identifies exact words, phrases, and punctuation changes within sentences/paragraphs,
+ * rather than replacing whole paragraphs with red strikethroughs and green additions.
  */
 export function computeTextDiff(textA: string, textB: string): {
   similarity: number;
@@ -142,265 +145,79 @@ export function computeTextDiff(textA: string, textB: string): {
     };
   }
 
-  // If texts are large, do line-based or word-based diff to prevent O(N*M) memory blowout
-  if (s1.length > 3000 || s2.length > 3000) {
-    return computeWordOrLineDiff(s1, s2);
-  }
+  let rawChunks: DiffChunk[] = [];
 
-  // Myers or LCS on characters for high precision on moderate chapter sizes
-  return computeCharLCS(s1, s2);
-}
-
-/**
- * Word/Token based diff for larger texts (very fast and memory efficient)
- */
-function computeWordOrLineDiff(textA: string, textB: string): {
-  similarity: number;
-  editPercentage: number;
-  chunks: DiffChunk[];
-  identicalCount: number;
-  deletedCount: number;
-  addedCount: number;
-} {
-  // Tokenize by word boundaries or whitespace, keeping tokens
-  const tokenize = (str: string) => {
-    return str.split(/([ \t\r\n]+|[.,!?;:()""''«»—–])/).filter(Boolean);
-  };
-
-  const tokensA = tokenize(textA);
-  const tokensB = tokenize(textB);
-
-  const m = tokensA.length;
-  const n = tokensB.length;
-
-  // Standard DP Matrix bounded
-  // To avoid huge matrix allocation if m * n > 4_000_000, we fallback to paragraph/line diff
-  if (m * n > 2_000_000) {
-    return computeParagraphDiff(textA, textB);
-  }
-
-  const dp: number[] = new Array((m + 1) * (n + 1)).fill(0);
-  const get = (i: number, j: number) => dp[i * (n + 1) + j];
-  const set = (i: number, j: number, val: number) => { dp[i * (n + 1) + j] = val; };
-
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (tokensA[i - 1] === tokensB[j - 1]) {
-        set(i, j, get(i - 1, j - 1) + 1);
-      } else {
-        set(i, j, Math.max(get(i - 1, j), get(i, j - 1)));
+  // If text is within standard chapter size (< 80,000 characters), run full-fidelity word diff directly
+  if (s1.length < 80000 && s2.length < 80000) {
+    const diff = diffWordsWithSpace(s1, s2);
+    rawChunks = diff.map(p => ({
+      type: (p.added ? 'insert' : p.removed ? 'delete' : 'equal') as 'insert' | 'delete' | 'equal',
+      value: p.value
+    }));
+  } else {
+    // Hierarchical two-pass diff for very large texts:
+    // 1. Line-level alignment
+    // 2. Intra-line word diffing on modified line groups
+    const lineDiff = diffLines(s1, s2);
+    let i = 0;
+    while (i < lineDiff.length) {
+      const p = lineDiff[i];
+      if (!p.added && !p.removed) {
+        rawChunks.push({ type: 'equal', value: p.value });
+        i++;
+      } else if (p.removed && i + 1 < lineDiff.length && lineDiff[i + 1].added) {
+        // Paired changed lines: diff words to pinpoint changes instead of blocking whole lines!
+        const wDiff = diffWordsWithSpace(p.value, lineDiff[i + 1].value);
+        for (const w of wDiff) {
+          rawChunks.push({
+            type: (w.added ? 'insert' : w.removed ? 'delete' : 'equal') as 'insert' | 'delete' | 'equal',
+            value: w.value
+          });
+        }
+        i += 2;
+      } else if (p.removed) {
+        rawChunks.push({ type: 'delete', value: p.value });
+        i++;
+      } else if (p.added) {
+        rawChunks.push({ type: 'insert', value: p.value });
+        i++;
       }
     }
   }
 
-  // Backtrack to build chunks
-  let i = m;
-  let j = n;
-  const rawChunks: DiffChunk[] = [];
-
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && tokensA[i - 1] === tokensB[j - 1]) {
-      rawChunks.push({ type: 'equal', value: tokensA[i - 1] });
-      i--;
-      j--;
-    } else if (j > 0 && (i === 0 || get(i, j - 1) >= get(i - 1, j))) {
-      rawChunks.push({ type: 'insert', value: tokensB[j - 1] });
-      j--;
-    } else if (i > 0 && (j === 0 || get(i, j - 1) < get(i - 1, j))) {
-      rawChunks.push({ type: 'delete', value: tokensA[i - 1] });
-      i--;
-    }
-  }
-
-  rawChunks.reverse();
-  const mergedChunks = mergeAdjacentChunks(rawChunks);
-
-  let identicalCount = 0;
-  let deletedCount = 0;
-  let addedCount = 0;
-
-  for (const c of mergedChunks) {
-    if (c.type === 'equal') identicalCount += c.value.length;
-    else if (c.type === 'delete') deletedCount += c.value.length;
-    else if (c.type === 'insert') addedCount += c.value.length;
-  }
-
-  const totalRef = Math.max(textA.length, textB.length);
-  const similarity = totalRef === 0 ? 100 : Math.max(0, Math.min(100, Math.round((identicalCount / totalRef) * 10000) / 100));
-  const editPercentage = Math.round((100 - similarity) * 100) / 100;
-
-  return {
-    similarity,
-    editPercentage,
-    chunks: mergedChunks,
-    identicalCount,
-    deletedCount,
-    addedCount
-  };
-}
-
-/**
- * Paragraph/line fallback for very large texts
- */
-function computeParagraphDiff(textA: string, textB: string): {
-  similarity: number;
-  editPercentage: number;
-  chunks: DiffChunk[];
-  identicalCount: number;
-  deletedCount: number;
-  addedCount: number;
-} {
-  const linesA = textA.split(/\n/);
-  const linesB = textB.split(/\n/);
-
-  const m = linesA.length;
-  const n = linesB.length;
-  const dp: number[] = new Array((m + 1) * (n + 1)).fill(0);
-  const get = (i: number, j: number) => dp[i * (n + 1) + j];
-  const set = (i: number, j: number, val: number) => { dp[i * (n + 1) + j] = val; };
-
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (linesA[i - 1] === linesB[j - 1]) {
-        set(i, j, get(i - 1, j - 1) + 1);
-      } else {
-        set(i, j, Math.max(get(i - 1, j), get(i, j - 1)));
-      }
-    }
-  }
-
-  let i = m;
-  let j = n;
-  const rawChunks: DiffChunk[] = [];
-
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && linesA[i - 1] === linesB[j - 1]) {
-      rawChunks.push({ type: 'equal', value: linesA[i - 1] + (i < m ? '\n' : '') });
-      i--;
-      j--;
-    } else if (j > 0 && (i === 0 || get(i, j - 1) >= get(i - 1, j))) {
-      rawChunks.push({ type: 'insert', value: linesB[j - 1] + (j < n ? '\n' : '') });
-      j--;
-    } else if (i > 0 && (j === 0 || get(i, j - 1) < get(i - 1, j))) {
-      rawChunks.push({ type: 'delete', value: linesA[i - 1] + (i < m ? '\n' : '') });
-      i--;
-    }
-  }
-
-  rawChunks.reverse();
-  const mergedChunks = mergeAdjacentChunks(rawChunks);
-
-  let identicalCount = 0;
-  let deletedCount = 0;
-  let addedCount = 0;
-
-  for (const c of mergedChunks) {
-    if (c.type === 'equal') identicalCount += c.value.length;
-    else if (c.type === 'delete') deletedCount += c.value.length;
-    else if (c.type === 'insert') addedCount += c.value.length;
-  }
-
-  const totalRef = Math.max(textA.length, textB.length);
-  const similarity = totalRef === 0 ? 100 : Math.max(0, Math.min(100, Math.round((identicalCount / totalRef) * 10000) / 100));
-  const editPercentage = Math.round((100 - similarity) * 100) / 100;
-
-  return {
-    similarity,
-    editPercentage,
-    chunks: mergedChunks,
-    identicalCount,
-    deletedCount,
-    addedCount
-  };
-}
-
-/**
- * Character-level LCS for medium texts
- */
-function computeCharLCS(s1: string, s2: string): {
-  similarity: number;
-  editPercentage: number;
-  chunks: DiffChunk[];
-  identicalCount: number;
-  deletedCount: number;
-  addedCount: number;
-} {
-  const m = s1.length;
-  const n = s2.length;
-  const dp: number[] = new Array((m + 1) * (n + 1)).fill(0);
-  const get = (i: number, j: number) => dp[i * (n + 1) + j];
-  const set = (i: number, j: number, val: number) => { dp[i * (n + 1) + j] = val; };
-
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (s1[i - 1] === s2[j - 1]) {
-        set(i, j, get(i - 1, j - 1) + 1);
-      } else {
-        set(i, j, Math.max(get(i - 1, j), get(i, j - 1)));
-      }
-    }
-  }
-
-  let i = m;
-  let j = n;
-  const rawChunks: DiffChunk[] = [];
-
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && s1[i - 1] === s2[j - 1]) {
-      rawChunks.push({ type: 'equal', value: s1[i - 1] });
-      i--;
-      j--;
-    } else if (j > 0 && (i === 0 || get(i, j - 1) >= get(i - 1, j))) {
-      rawChunks.push({ type: 'insert', value: s2[j - 1] });
-      j--;
-    } else if (i > 0 && (j === 0 || get(i, j - 1) < get(i - 1, j))) {
-      rawChunks.push({ type: 'delete', value: s1[i - 1] });
-      i--;
-    }
-  }
-
-  rawChunks.reverse();
-  const mergedChunks = mergeAdjacentChunks(rawChunks);
-
-  let identicalCount = 0;
-  let deletedCount = 0;
-  let addedCount = 0;
-
-  for (const c of mergedChunks) {
-    if (c.type === 'equal') identicalCount += c.value.length;
-    else if (c.type === 'delete') deletedCount += c.value.length;
-    else if (c.type === 'insert') addedCount += c.value.length;
-  }
-
-  const totalRef = Math.max(s1.length, s2.length);
-  const similarity = totalRef === 0 ? 100 : Math.max(0, Math.min(100, Math.round((identicalCount / totalRef) * 10000) / 100));
-  const editPercentage = Math.round((100 - similarity) * 100) / 100;
-
-  return {
-    similarity,
-    editPercentage,
-    chunks: mergedChunks,
-    identicalCount,
-    deletedCount,
-    addedCount
-  };
-}
-
-function mergeAdjacentChunks(chunks: DiffChunk[]): DiffChunk[] {
-  if (chunks.length === 0) return [];
-  const merged: DiffChunk[] = [];
-  let cur = { ...chunks[0] };
-
-  for (let k = 1; k < chunks.length; k++) {
-    if (chunks[k].type === cur.type) {
-      cur.value += chunks[k].value;
+  // Merge consecutive adjacent chunks of the same type
+  const mergedChunks: DiffChunk[] = [];
+  for (const c of rawChunks) {
+    if (!c.value) continue;
+    if (mergedChunks.length > 0 && mergedChunks[mergedChunks.length - 1].type === c.type) {
+      mergedChunks[mergedChunks.length - 1].value += c.value;
     } else {
-      merged.push(cur);
-      cur = { ...chunks[k] };
+      mergedChunks.push({ ...c });
     }
   }
-  merged.push(cur);
-  return merged;
+
+  let identicalCount = 0;
+  let deletedCount = 0;
+  let addedCount = 0;
+
+  for (const c of mergedChunks) {
+    if (c.type === 'equal') identicalCount += c.value.length;
+    else if (c.type === 'delete') deletedCount += c.value.length;
+    else if (c.type === 'insert') addedCount += c.value.length;
+  }
+
+  const totalRef = Math.max(textA.length, textB.length);
+  const similarity = totalRef === 0 ? 100 : Math.max(0, Math.min(100, Math.round((identicalCount / totalRef) * 10000) / 100));
+  const editPercentage = Math.round((100 - similarity) * 100) / 100;
+
+  return {
+    similarity,
+    editPercentage,
+    chunks: mergedChunks,
+    identicalCount,
+    deletedCount,
+    addedCount
+  };
 }
 
 /**
