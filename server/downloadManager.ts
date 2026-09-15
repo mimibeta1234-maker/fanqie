@@ -1,9 +1,11 @@
 import { getBookInfo, getCatalog, getChapters, getChapter, formatChapterText, parseBookId } from './fanqieCore';
+import { getQimaoChapter } from './qimaoCore';
 import { generateEpub } from './epubGenerator';
 
 export interface DownloadTask {
   taskId: string;
   bookId: string;
+  provider?: 'fanqie' | 'qimao';
   bookInfo: any;
   status: 'idle' | 'downloading' | 'completed' | 'paused' | 'cancelled' | 'error';
   totalChapters: number;
@@ -23,7 +25,7 @@ class DownloadManager {
   private tasks: Map<string, DownloadTask> = new Map();
   private abortControllers: Map<string, AbortController> = new Map();
 
-  createTask(bookId: string, bookInfo: any, catalog: any, range?: { start: number; end: number }): DownloadTask {
+  createTask(bookId: string, bookInfo: any, catalog: any, range?: { start: number; end: number }, provider: 'fanqie' | 'qimao' = 'fanqie'): DownloadTask {
     const taskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const allChapters = catalog.chapter_list || [];
 
@@ -35,6 +37,7 @@ class DownloadManager {
     const task: DownloadTask = {
       taskId,
       bookId,
+      provider,
       bookInfo,
       status: 'idle',
       totalChapters: targetChapters.length,
@@ -82,7 +85,8 @@ class DownloadManager {
     const abortController = new AbortController();
     this.abortControllers.set(taskId, abortController);
 
-    const BATCH_SIZE = 5; // Optimal batch size for Fanqie API stability
+    const isQimao = task.provider === 'qimao';
+    const BATCH_SIZE = isQimao ? 6 : 5;
     const total = task.chapters.length;
     let completed = 0;
     let failed = 0;
@@ -94,53 +98,73 @@ class DownloadManager {
         }
 
         const batchSlice = task.chapters.slice(i, i + BATCH_SIZE);
-        const itemIds = batchSlice.map(c => c.itemId);
         task.currentChapterTitle = batchSlice[0].title;
 
-        try {
-          // Use batch API
-          const batchRes: any = await getChapters(itemIds, task.bookId);
+        if (isQimao) {
+          // Parallel fetch for Qimao batch
+          await Promise.all(
+            batchSlice.map(async (ch) => {
+              if (abortController.signal.aborted) return;
+              try {
+                const res = await getQimaoChapter(task.bookId, ch.itemId, ch.title, task.bookInfo?.book_name, ch.index);
+                if (res && res.content) {
+                  ch.content = res.content;
+                  completed++;
+                } else {
+                  ch.error = 'Lỗi tải chương';
+                  failed++;
+                }
+              } catch (e: any) {
+                ch.error = e.message || 'Lỗi tải chương';
+                failed++;
+              }
+            })
+          );
+        } else {
+          // Fanqie batch API
+          const itemIds = batchSlice.map(c => c.itemId);
+          try {
+            const batchRes: any = await getChapters(itemIds, task.bookId);
 
-          for (const ch of batchSlice) {
-            const data = batchRes?.[ch.itemId];
-            if (data && data.content && !data.error) {
-              ch.content = formatChapterText(data.content, ch.title);
-              completed++;
-            } else {
-              // Fallback to single fetch
+            for (const ch of batchSlice) {
+              const data = batchRes?.[ch.itemId];
+              if (data && data.content && !data.error) {
+                ch.content = formatChapterText(data.content, ch.title);
+                completed++;
+              } else {
+                try {
+                  const single: any = await getChapter(ch.itemId, 0);
+                  if (single && single.content) {
+                    ch.content = formatChapterText(single.content, ch.title);
+                    completed++;
+                  } else {
+                    ch.error = "Không tải được nội dung";
+                    failed++;
+                  }
+                } catch (singleErr: any) {
+                  ch.error = singleErr.message || "Lỗi tải chương";
+                  failed++;
+                }
+              }
+            }
+          } catch (batchErr) {
+            for (const ch of batchSlice) {
+              if (abortController.signal.aborted) break;
               try {
                 const single: any = await getChapter(ch.itemId, 0);
                 if (single && single.content) {
                   ch.content = formatChapterText(single.content, ch.title);
                   completed++;
                 } else {
-                  ch.error = "Không tải được nội dung";
+                  ch.error = "Lỗi nội dung";
                   failed++;
                 }
-              } catch (singleErr: any) {
-                ch.error = singleErr.message || "Lỗi tải chương";
+              } catch (err: any) {
+                ch.error = err.message;
                 failed++;
               }
+              await new Promise(r => setTimeout(r, 100));
             }
-          }
-        } catch (batchErr) {
-          // Fallback each chapter individually
-          for (const ch of batchSlice) {
-            if (abortController.signal.aborted) break;
-            try {
-              const single: any = await getChapter(ch.itemId, 0);
-              if (single && single.content) {
-                ch.content = formatChapterText(single.content, ch.title);
-                completed++;
-              } else {
-                ch.error = "Lỗi nội dung";
-                failed++;
-              }
-            } catch (err: any) {
-              ch.error = err.message;
-              failed++;
-            }
-            await new Promise(r => setTimeout(r, 100));
           }
         }
 
@@ -151,8 +175,7 @@ class DownloadManager {
         const elapsedSec = Math.max((Date.now() - task.startTime) / 1000, 0.5);
         task.speed = `${(completed / elapsedSec).toFixed(1)} chương/s`;
 
-        // Small respectful delay between batches
-        await new Promise(r => setTimeout(r, 150));
+        await new Promise(r => setTimeout(r, 120));
       }
 
       if ((task.status as string) !== 'cancelled') {
@@ -177,7 +200,6 @@ class DownloadManager {
     const totalCount = task.totalChapters || info.chapter_count || task.completedChapters || 0;
     const tagVal = info.tags || info.category || "Tiểu thuyết";
 
-    // Header with only requested info: Tên truyện, Tác giả, Tag, Số chương
     const headerLines = [
       `Tên truyện: ${info.book_name || "Không rõ"}`,
       `Tác giả: ${info.author || "Không rõ"}`,
@@ -217,7 +239,7 @@ class DownloadManager {
       }));
 
     return await generateEpub({
-      title: info.book_name || "Truyện Fanqie",
+      title: info.book_name || (task.provider === 'qimao' ? "Truyện Qimao" : "Truyện Fanqie"),
       author: info.author || "Tác giả",
       description: info.abstract,
       coverUrl: info.thumb_url,

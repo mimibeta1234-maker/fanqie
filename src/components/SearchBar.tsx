@@ -6,25 +6,14 @@ interface SearchBarProps {
   loading: boolean;
 }
 
-const SAMPLE_BOOKS = [
-  { id: '7069948840148732967', title: '原始蛮荒部落' },
-  { id: '7117195748957817892', title: '十日终焉' },
-  { id: '7184497677840485387', title: '斩神' }
-];
-
 export const SearchBar: React.FC<SearchBarProps> = ({ onSearchOrFetch, loading }) => {
   const [inputVal, setInputVal] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (inputVal.trim()) {
-      onSearchOrFetch(inputVal.trim());
+    if ((inputVal || '').trim()) {
+      onSearchOrFetch((inputVal || '').trim());
     }
-  };
-
-  const handleSampleClick = (sampleId: string) => {
-    setInputVal(sampleId);
-    onSearchOrFetch(sampleId);
   };
 
   return (
@@ -37,7 +26,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSearchOrFetch, loading }
 
           <input
             type="text"
-            value={inputVal}
+            value={inputVal || ''}
             onChange={e => setInputVal(e.target.value)}
             placeholder="Dán link Fanqie, ID truyện, hoặc tên truyện..."
             disabled={loading}
@@ -48,7 +37,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSearchOrFetch, loading }
 
         <button
           type="submit"
-          disabled={loading || !inputVal.trim()}
+          disabled={loading || !(inputVal || '').trim()}
           className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
           id="btn-submit-search"
         >
@@ -62,23 +51,6 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSearchOrFetch, loading }
           )}
         </button>
       </form>
-
-      {/* Quick sample chips */}
-      <div className="mt-2.5 flex items-center gap-1.5 text-xs text-stone-500 overflow-x-auto pt-0.5">
-        <span className="text-stone-400 shrink-0">Mẫu:</span>
-        {SAMPLE_BOOKS.map(sample => (
-          <button
-            key={sample.id}
-            type="button"
-            onClick={() => handleSampleClick(sample.id)}
-            disabled={loading}
-            className="px-2 py-0.5 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded text-xs transition-colors cursor-pointer shrink-0"
-            id={`btn-sample-${sample.id}`}
-          >
-            {sample.title}
-          </button>
-        ))}
-      </div>
     </div>
   );
 };

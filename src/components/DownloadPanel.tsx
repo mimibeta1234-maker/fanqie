@@ -89,7 +89,7 @@ export const DownloadPanel: React.FC<DownloadPanelProps> = ({
                 type="number"
                 min={1}
                 max={totalChapters}
-                value={rangeStart}
+                value={rangeStart ?? ''}
                 onChange={e => setRangeStart(Math.max(1, parseInt(e.target.value) || 1))}
                 className="w-16 px-2 py-1 bg-stone-50 border border-stone-300 rounded text-center font-semibold focus:outline-none focus:border-red-500"
               />
@@ -98,7 +98,7 @@ export const DownloadPanel: React.FC<DownloadPanelProps> = ({
                 type="number"
                 min={rangeStart}
                 max={totalChapters}
-                value={rangeEnd}
+                value={rangeEnd ?? ''}
                 onChange={e => setRangeEnd(Math.max(rangeStart, parseInt(e.target.value) || totalChapters))}
                 className="w-16 px-2 py-1 bg-stone-50 border border-stone-300 rounded text-center font-semibold focus:outline-none focus:border-red-500"
               />

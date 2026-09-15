@@ -1127,23 +1127,100 @@ function apiFetch(url, options = {}) {
     return [volmap, allItems];
   }
   async function getCatalog(bookId) {
-    const r = await getCatalogRaw(bookId);
-    let catalogRaw = r[0];
-    let allItemIds = r[1];
-    if (!catalogRaw || !allItemIds) {
-      const rw = await webCatalog(bookId);
-      catalogRaw = rw[0];
-      allItemIds = rw[1];
+    let catalogRaw = null;
+    let allItemIds = null;
+
+    // 1. Try App API
+    try {
+      const r = await getCatalogRaw(bookId);
+      if (r && Array.isArray(r[0]) && r[0].length > 0) {
+        catalogRaw = r[0];
+        allItemIds = r[1];
+      }
+    } catch (err) {
+      console.warn(`[getCatalog] App API directory failed for ${bookId}:`, err);
     }
+
+    // 2. Try Web API if App API failed or returned empty
+    if (!catalogRaw || !allItemIds || catalogRaw.length === 0) {
+      try {
+        const rw = await webCatalog(bookId);
+        if (rw && rw[0] && rw[1]) {
+          const volmap = rw[0];
+          allItemIds = Array.isArray(rw[1]) ? rw[1].map((id: any) => String(id)) : [];
+          catalogRaw = [];
+          
+          if (typeof volmap === 'object' && volmap !== null) {
+            for (const [volName, chapterArr] of Object.entries(volmap)) {
+              if (Array.isArray(chapterArr)) {
+                for (const ch of chapterArr) {
+                  catalogRaw.push({
+                    volume_name: volName,
+                    item_id: String(ch.itemId || ch.item_id || ch.id || ''),
+                    title: ch.title || 'Chương không tên',
+                    first_pass_time: ch.firstPassTime || ch.first_pass_time || 0,
+                    chapter_word_number: ch.wordCount || ch.chapter_word_number || 0
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`[getCatalog] Web API directory failed for ${bookId}:`, err);
+      }
+    }
+
+    // 3. Fallback: Parse web page HTML window.__INITIAL_STATE__
+    if (!catalogRaw || catalogRaw.length === 0) {
+      try {
+        console.log(`[getCatalog] Trying HTML fallback for book ${bookId}...`);
+        const webRes = await fetch(`https://fanqienovel.com/page/${bookId}`, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        });
+        const html = await webRes.text();
+        const match = html.match(/window\.__INITIAL_STATE__\s*=\s*(\{.*?\});/s);
+        if (match) {
+          const pageData = JSON.parse(match[1])?.page;
+          const chapterListData = pageData?.chapterList || pageData?.chapterListWithVolume || [];
+          if (Array.isArray(chapterListData) && chapterListData.length > 0) {
+            catalogRaw = [];
+            allItemIds = [];
+            chapterListData.forEach((ch: any) => {
+              const itemId = String(ch.itemId || ch.item_id || ch.id || "");
+              if (itemId) {
+                allItemIds.push(itemId);
+                catalogRaw.push({
+                  volume_name: ch.volumeName || ch.volume_name || "",
+                  item_id: itemId,
+                  title: ch.title || "Chương không tên",
+                  first_pass_time: ch.firstPassTime || ch.first_pass_time || 0,
+                  chapter_word_number: ch.wordCount || ch.chapter_word_number || 0
+                });
+              }
+            });
+          }
+        }
+      } catch (e) {
+        console.warn("[getCatalog] HTML fallback failed:", e);
+      }
+    }
+
+    if (!catalogRaw || catalogRaw.length === 0) {
+      throw new Error(`Không thể lấy danh sách chương cho truyện (ID: ${bookId}). Truyện có thể đã bị ẩn hoặc gỡ khỏi hệ thống.`);
+    }
+
     const vmap = {};
     const chapters = [];
     catalogRaw.forEach((item) => {
       const volumeName = item.volume_name ?? "";
+      const passTime = Number(item.first_pass_time || item.firstPassTime || 0);
       const chapterItem = {
         item_id: String(item.item_id || item.itemId),
-        title: item.title,
-        // YYYY-MM-DD HH:mm:ss
-        update_time: moment((item.first_pass_time || item.firstPassTime) * 1e3).format("YYYY-MM-DD HH:mm:ss"),
+        title: item.title || "Chương không tên",
+        update_time: passTime ? moment(passTime * 1e3).format("YYYY-MM-DD HH:mm:ss") : "",
         char_count: item.chapter_word_number || 0,
         volume_title: volumeName
       };
@@ -1155,13 +1232,16 @@ function apiFetch(url, options = {}) {
           chapter_list: []
         };
       }
-      vmap[volumeName].chapter_list.push(chapterItem);
+      if (vmap[volumeName]) {
+        vmap[volumeName].chapter_list.push(chapterItem);
+      }
     });
+
     return {
       book_id: bookId,
       volume_list: Object.values(vmap),
       chapter_list: chapters,
-      all_item_ids: allItemIds
+      all_item_ids: allItemIds && allItemIds.length > 0 ? allItemIds : chapters.map(c => c.item_id)
     };
   }
   function mappingCreationStatus(status) {
@@ -1341,19 +1421,22 @@ function apiFetch(url, options = {}) {
 export function parseBookId(input) {
   if (!input) return "";
   const trimmed = String(input).trim();
+  
+  // 1. Pure digits (15 to 22 digits)
   if (/^\d{15,22}$/.test(trimmed)) {
     return trimmed;
   }
-  const pageMatch = trimmed.match(/fanqienovel\.com\/page\/(\d+)/);
+
+  // 2. /page/123456789... or /reader/123456789...
+  const pageMatch = trimmed.match(/page\/(\d{15,22})/i) || trimmed.match(/reader\/(\d{15,22})/i);
   if (pageMatch) return pageMatch[1];
 
-  const bookIdMatch = trimmed.match(/book_?id=(\d+)/i);
+  // 3. book_id=123456789... or bookId=123456789...
+  const bookIdMatch = trimmed.match(/book_?id=(\d{15,22})/i);
   if (bookIdMatch) return bookIdMatch[1];
 
-  const readerMatch = trimmed.match(/fanqienovel\.com\/reader\/(\d+)/);
-  if (readerMatch) return readerMatch[1];
-
-  const anyDigits = trimmed.match(/\b(\d{18,20})\b/);
+  // 4. Match any sequence of 15 to 22 digits anywhere in URL or share text
+  const anyDigits = trimmed.match(/(\d{15,22})/);
   if (anyDigits) return anyDigits[1];
 
   return trimmed;
@@ -1419,20 +1502,31 @@ export async function searchBooks(query, count = 10) {
     for (const tab of tabs) {
       const list = tab?.data ?? [];
       for (const item of list) {
-        const b = item?.book_data?.[0];
-        if (b && b.book_id) {
+        const b = item?.book_data?.[0] || item?.book_info || item?.book || item?.data || item;
+        if (b && (b.book_id || b.bookId)) {
+          const bookId = String(b.book_id || b.bookId);
+          const chapterCount = Number(
+            b.serial_count ||
+            b.content_chapter_number ||
+            b.chapter_count ||
+            b.chapter_number ||
+            b.sub_count ||
+            b.item_count ||
+            b.total_chapter_count ||
+            0
+          );
           books.push({
-            book_id: b.book_id,
-            book_name: b.book_name || "Chưa có tên",
+            book_id: bookId,
+            book_name: b.book_name || b.bookName || b.title || "Chưa có tên",
             author: b.author || "Tác giả",
-            thumb_url: b.thumb_url || "",
+            thumb_url: b.thumb_url || b.detail_page_thumb_url || b.thumbUri || "",
             score: b.score || "9.0",
             category: b.category || "Tiểu thuyết",
-            abstract: b.abstract || "",
-            word_number: b.word_number || "0",
-            chapter_count: Number(b.serial_count || b.content_chapter_number || 0),
-            last_chapter_title: b.last_chapter_title || "",
-            creation_status: b.creation_status === "1" ? "已完结 (Hoàn thành)" : "连载中 (Đang ra)"
+            abstract: b.abstract || b.book_abstract_v2 || b.summary || "",
+            word_number: String(b.word_number || b.wordCount || "0"),
+            chapter_count: chapterCount,
+            last_chapter_title: b.last_chapter_title || b.lastChapterTitle || "",
+            creation_status: String(b.creation_status) === "0" ? "已完结 (Hoàn thành)" : "连载中 (Đang ra)"
           });
         }
       }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Navbar } from './components/Navbar';
+import { Navbar, StudioTab } from './components/Navbar';
 import { SearchBar } from './components/SearchBar';
 import { BookDetailCard } from './components/BookDetailCard';
 import { DownloadPanel } from './components/DownloadPanel';
@@ -8,12 +8,38 @@ import { ReaderModal } from './components/ReaderModal';
 import { SearchResultsModal } from './components/SearchResultsModal';
 import { SavedBooksModal } from './components/SavedBooksModal';
 import { PlotSearchModal } from './components/PlotSearchModal';
+import { CompareView } from './components/CompareView';
+import { ScribdView } from './components/ScribdView';
+import { QimaoView } from './components/QimaoView';
+import { ZhihuView } from './components/ZhihuView';
 import { Book, Catalog, Chapter, DownloadTaskStatus, SavedBook } from './types';
 import { getSavedBooks, saveBook, removeSavedBook, isBookSaved } from './utils/savedBooks';
 import { ChapterBookmark, getBookmarks, toggleChapterBookmark } from './utils/chapterBookmarks';
+import { isUserAuthenticated, clearAuthentication } from './utils/auth';
+import { PasswordGate } from './components/PasswordGate';
 import { AlertTriangle } from 'lucide-react';
 
 export default function App() {
+  // Authentication gate
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => isUserAuthenticated());
+
+  // Studio navigation tab: 'downloader' | 'qimao' | 'zhihu' | 'scribd' | 'compare'
+  const [activeTab, setActiveTab] = useState<StudioTab>(() => {
+    try {
+      const saved = localStorage.getItem('fanqie_active_tab') as StudioTab;
+      if (saved && ['downloader', 'qimao', 'zhihu', 'scribd', 'compare'].includes(saved)) {
+        return saved;
+      }
+    } catch (e) {}
+    return 'downloader';
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('fanqie_active_tab', activeTab);
+    } catch (e) {}
+  }, [activeTab]);
+
   const [currentBook, setCurrentBook] = useState<Book | null>(null);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [downloadTask, setDownloadTask] = useState<DownloadTaskStatus | null>(null);
@@ -56,10 +82,6 @@ export default function App() {
   // Polling ref for download progress
   const pollIntervalRef = useRef<any>(null);
 
-  // Load default sample book on startup
-  useEffect(() => {
-    handleLoadBook('7069948840148732967');
-  }, []);
 
   // Update bookmarked chapters when currentBook changes
   useEffect(() => {
@@ -127,23 +149,28 @@ export default function App() {
 
   // Load a book by ID or link
   const handleLoadBook = async (queryOrId: string) => {
+    const trimmedInput = String(queryOrId || '').trim();
+    if (!trimmedInput) return;
+
     setLoading(true);
     setErrorMessage(null);
 
-    // Check if input looks like a search keyword rather than an ID/URL
-    const isLikelyKeyword = !/^https?:\/\//i.test(queryOrId) && !/^\d{15,22}$/.test(queryOrId);
+    // Extract 15-22 digit book ID if present
+    const idMatch = trimmedInput.match(/\b(\d{15,22})\b/);
+    const extractedBookId = idMatch ? idMatch[1] : '';
+    const isUrlOrLink = /fanqie|fqnovel|dragon|read|page\/|reader\/|book_?id=|https?:\/\//i.test(trimmedInput);
 
-    if (isLikelyKeyword) {
-      // Execute search
+    // If it's purely text with no book ID and no link pattern, do keyword search
+    if (!extractedBookId && !isUrlOrLink) {
       try {
-        setSearchQuery(queryOrId);
-        const res = await fetch(`/api/search?q=${encodeURIComponent(queryOrId)}`);
+        setSearchQuery(trimmedInput);
+        const res = await fetch(`/api/search?q=${encodeURIComponent(trimmedInput)}`);
         const data = await res.json();
         if (data.success && data.books && data.books.length > 0) {
           setSearchResults(data.books);
           setIsSearchOpen(true);
         } else {
-          setErrorMessage(`Không tìm thấy truyện nào với từ khóa "${queryOrId}". Bạn hãy thử dán link hoặc ID truyện trực tiếp.`);
+          setErrorMessage(`Không tìm thấy truyện nào với từ khóa "${trimmedInput}". Bạn hãy thử dán link hoặc ID truyện trực tiếp.`);
         }
       } catch (err: any) {
         setErrorMessage(`Lỗi tìm kiếm: ${err.message}`);
@@ -153,23 +180,45 @@ export default function App() {
       return;
     }
 
+    // Try loading book info and catalog directly by ID/link
+    const targetQuery = extractedBookId || trimmedInput;
     try {
       // 1. Fetch Book Info
-      const bookRes = await fetch(`/api/book/info?id=${encodeURIComponent(queryOrId)}`);
+      const bookRes = await fetch(`/api/book/info?id=${encodeURIComponent(targetQuery)}`);
       const bookData = await bookRes.json();
 
       if (!bookData.success || !bookData.book) {
+        // If direct load failed and input wasn't pure digits, try search as fallback
+        if (!/^\d+$/.test(targetQuery)) {
+          const searchRes = await fetch(`/api/search?q=${encodeURIComponent(trimmedInput)}`);
+          const searchData = await searchRes.json();
+          if (searchData.success && searchData.books && searchData.books.length > 0) {
+            setSearchResults(searchData.books);
+            setIsSearchOpen(true);
+            return;
+          }
+        }
         throw new Error(bookData.error || "Không thể tải thông tin truyện");
       }
 
-      setCurrentBook(bookData.book);
+      let bookObj = bookData.book;
+      setCurrentBook(bookObj);
 
       // 2. Fetch Catalog
-      const catRes = await fetch(`/api/book/catalog?id=${encodeURIComponent(bookData.book.book_id)}`);
+      const catRes = await fetch(`/api/book/catalog?id=${encodeURIComponent(bookObj.book_id)}`);
       const catData = await catRes.json();
 
       if (catData.success && catData.catalog) {
         setCatalog(catData.catalog);
+        const chapterCount = catData.catalog.chapter_list?.length || 0;
+        if (chapterCount > 0) {
+          if (!bookObj.chapter_count || bookObj.chapter_count === 0) {
+            bookObj = { ...bookObj, chapter_count: chapterCount };
+            setCurrentBook(bookObj);
+          }
+        }
+      } else if (catData.error) {
+        setErrorMessage(`Đã tìm thấy truyện nhưng lỗi khi lấy danh sách chương: ${catData.error}`);
       }
     } catch (err: any) {
       setErrorMessage(err.message || "Có lỗi xảy ra khi tải truyện");
@@ -286,61 +335,88 @@ export default function App() {
     setSavedBooks(updated);
   };
 
+  // If not authenticated, require password gate
+  if (!isAuthenticated) {
+    return <PasswordGate onAuthenticated={() => setIsAuthenticated(true)} />;
+  }
+
   return (
     <div className="min-h-screen bg-[#faf9f6] text-stone-900 flex flex-col font-sans">
       <Navbar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
         onOpenSavedBooks={() => setIsSavedBooksOpen(true)}
         savedCount={savedBooks.length}
+        onLogout={() => {
+          clearAuthentication();
+          setIsAuthenticated(false);
+        }}
       />
 
-      <main className="flex-1 max-w-2xl w-full mx-auto px-4 py-6 space-y-4">
-        {/* Search Bar */}
-        <SearchBar onSearchOrFetch={handleLoadBook} loading={loading} />
+      <main className={`flex-1 w-full mx-auto px-4 py-6 ${activeTab === 'compare' ? 'max-w-5xl' : 'max-w-2xl space-y-4'}`}>
+        {activeTab === 'downloader' ? (
+          <>
+            {/* Search Bar */}
+            <SearchBar onSearchOrFetch={handleLoadBook} loading={loading} />
 
-        {/* Error message */}
-        {errorMessage && (
-          <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0 text-red-500" />
-              <span>{errorMessage}</span>
-            </div>
-            <button
-              onClick={() => setErrorMessage(null)}
-              className="text-red-500 hover:text-red-700 font-bold px-1"
-            >
-              ✕
-            </button>
-          </div>
-        )}
+            {/* Error message */}
+            {errorMessage && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-red-500" />
+                  <span>{errorMessage}</span>
+                </div>
+                <button
+                  onClick={() => setErrorMessage(null)}
+                  className="text-red-500 hover:text-red-700 font-bold px-1"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
-        {/* Book Details & Download Panel */}
-        {currentBook && (
-          <div className="space-y-4">
-            <BookDetailCard
-              book={currentBook}
-              totalChapters={totalChapters}
-              onOpenCatalog={() => {
-                setCatalogInitialMarkedFilter(false);
-                setIsCatalogOpen(true);
-              }}
-              onOpenPlotSearch={() => setIsPlotSearchOpen(true)}
-              isSaved={isCurrentBookSaved}
-              onToggleSave={handleToggleSaveBook}
-              markedChaptersCount={bookmarkedChapters.length}
-              onOpenMarkedChapters={() => {
-                setCatalogInitialMarkedFilter(true);
-                setIsCatalogOpen(true);
-              }}
-            />
+            {/* Book Details & Download Panel */}
+            {currentBook && (
+              <div className="space-y-4">
+                <BookDetailCard
+                  book={currentBook}
+                  totalChapters={totalChapters}
+                  onOpenCatalog={() => {
+                    setCatalogInitialMarkedFilter(false);
+                    setIsCatalogOpen(true);
+                  }}
+                  onOpenPlotSearch={() => setIsPlotSearchOpen(true)}
+                  isSaved={isCurrentBookSaved}
+                  onToggleSave={handleToggleSaveBook}
+                  markedChaptersCount={bookmarkedChapters.length}
+                  onOpenMarkedChapters={() => {
+                    setCatalogInitialMarkedFilter(true);
+                    setIsCatalogOpen(true);
+                  }}
+                />
 
-            <DownloadPanel
-              task={downloadTask}
-              totalChapters={totalChapters}
-              onStartDownload={handleStartDownload}
-              onCancelDownload={handleCancelDownload}
-              bookName={currentBook.book_name}
-            />
-          </div>
+                <DownloadPanel
+                  task={downloadTask}
+                  totalChapters={totalChapters}
+                  onStartDownload={handleStartDownload}
+                  onCancelDownload={handleCancelDownload}
+                  bookName={currentBook.book_name}
+                />
+              </div>
+            )}
+          </>
+        ) : activeTab === 'qimao' ? (
+          /* Qimao Downloader View */
+          <QimaoView />
+        ) : activeTab === 'zhihu' ? (
+          /* Zhihu Downloader View */
+          <ZhihuView />
+        ) : activeTab === 'scribd' ? (
+          /* Scribd Downloader View */
+          <ScribdView />
+        ) : (
+          /* Compare Tool View */
+          <CompareView />
         )}
       </main>
 

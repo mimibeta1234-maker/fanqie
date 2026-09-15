@@ -1,6 +1,6 @@
 {
-  "name": "Fanqie Novel Downloader",
-  "description": "Tool tải truyện Fanqie full chương, tự động vượt khóa đọc trên web để tải trọn bộ miễn phí định dạng TXT và EPUB.",
+  "name": "Studio",
+  "description": "Studio xử lý văn bản, tải truyện Fanqie, Qimao, tải toàn diện nội dung Zhihu (Free bài viết, câu trả lời, diễn đàn & mở khóa VIP 盐选), tải tài liệu Scribd (PDF/TXT/DOCX), so sánh văn bản & tự động tách chương tính tỷ lệ chỉnh sửa.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -7,7 +7,7 @@ interface ChapterListModalProps {
   onClose: () => void;
   chapters: Chapter[];
   bookTitle: string;
-  onPreviewChapter: (chapter: Chapter) => void;
+  onPreviewChapter: (chapter: Chapter, index?: number) => void;
   onOpenPlotSearch?: () => void;
   markedItemIds?: Set<string>;
   onToggleMarkChapter?: (chapter: Chapter, chapterIndex: number) => void;
@@ -77,7 +77,7 @@ export const ChapterListModal: React.FC<ChapterListModalProps> = ({
 
   // Filtered chapters with smart chapter number and Chinese numeral support
   const filteredChapters = useMemo(() => {
-    const term = searchTerm.trim();
+    const term = (searchTerm || '').trim();
     const isNumQuery = /^(?:chương|chap|c|第)?\s*(\d+)\s*(?:chương|chap|c|章)?$/i.test(term);
     const targetNum = isNumQuery ? parseInt(term.replace(/[^\d]/g, ''), 10) : null;
     const chineseNum = targetNum !== null && targetNum > 0 ? toChineseNum(targetNum) : null;
@@ -214,7 +214,7 @@ export const ChapterListModal: React.FC<ChapterListModalProps> = ({
             <input
               type="text"
               placeholder="Tìm theo số chương (VD: 289) hoặc tên..."
-              value={searchTerm}
+              value={searchTerm || ''}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-9 pr-4 py-2 text-xs sm:text-sm bg-stone-50 border border-stone-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
               id="input-search-chapters"
@@ -384,7 +384,7 @@ export const ChapterListModal: React.FC<ChapterListModalProps> = ({
 
                     {/* Read chapter button */}
                     <button
-                      onClick={() => onPreviewChapter(ch)}
+                      onClick={() => onPreviewChapter(ch, ch.originalIndex)}
                       className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-red-50 text-red-700 hover:bg-red-100 rounded-lg font-medium border border-red-200 transition-colors cursor-pointer"
                       title="Đọc thử chương này (Đã giải mã vượt khóa)"
                       id={`btn-read-chapter-${ch.item_id}`}

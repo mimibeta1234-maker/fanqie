@@ -46,9 +46,9 @@ export const SearchResultsModal: React.FC<SearchResultsModalProps> = ({
               Không tìm thấy truyện nào với từ khóa này
             </div>
           ) : (
-            results.map(book => (
+            results.map((book, idx) => (
               <div
-                key={book.book_id}
+                key={`${book.book_id || 'book'}-${idx}`}
                 className="p-4 border border-stone-200 rounded-xl hover:border-red-300 hover:shadow-sm transition-all bg-white flex flex-col sm:flex-row gap-4 items-start"
               >
                 {/* Book Cover */}

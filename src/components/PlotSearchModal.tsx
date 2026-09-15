@@ -39,7 +39,7 @@ export const PlotSearchModal: React.FC<PlotSearchModalProps> = ({
   const totalCount = chapters.length;
 
   const handleStartSearch = async () => {
-    const trimmed = query.trim();
+    const trimmed = String(query || '').trim();
     if (!trimmed) {
       setErrorMessage("Vui lòng nhập từ khóa hoặc đoạn tình tiết cần tìm");
       return;
