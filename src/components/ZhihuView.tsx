@@ -18,8 +18,7 @@ import {
   BookMarked,
   Type,
   ClipboardPaste,
-  Globe,
-  Sparkles
+  Globe
 } from 'lucide-react';
 import { ZhihuEntry, ZhihuStory } from '../types';
 
@@ -391,7 +390,7 @@ export const ZhihuView: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <Sparkles className="w-3.5 h-3.5" />
+                    <Download className="w-3.5 h-3.5" />
                     <span>Xử lý & Tải về ngay</span>
                   </>
                 )}

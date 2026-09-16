@@ -17,6 +17,7 @@ import { getSavedBooks, saveBook, removeSavedBook, isBookSaved } from './utils/s
 import { ChapterBookmark, getBookmarks, toggleChapterBookmark } from './utils/chapterBookmarks';
 import { isUserAuthenticated, clearAuthentication } from './utils/auth';
 import { PasswordGate } from './components/PasswordGate';
+import { HdCoverModal } from './components/HdCoverModal';
 import { AlertTriangle } from 'lucide-react';
 
 export default function App() {
@@ -62,6 +63,7 @@ export default function App() {
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
   const [searchResults, setSearchResults] = useState<Book[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isGlobalHdCoverOpen, setIsGlobalHdCoverOpen] = useState<boolean>(false);
 
   // Reader modal state
   const [readerState, setReaderState] = useState<{
@@ -352,6 +354,7 @@ export default function App() {
           clearAuthentication();
           setIsAuthenticated(false);
         }}
+        onOpenHdCoverModal={() => setIsGlobalHdCoverOpen(true)}
       />
 
       <main className={`flex-1 w-full mx-auto px-4 py-6 ${activeTab === 'compare' ? 'max-w-5xl' : 'max-w-2xl space-y-4'}`}>
@@ -474,6 +477,15 @@ export default function App() {
         error={readerState.error}
         isMarked={markedItemIds.has(readerState.itemId)}
         onToggleMark={handleToggleMarkFromReader}
+      />
+
+      {/* Standalone HD Cover Extractor Modal */}
+      <HdCoverModal
+        isOpen={isGlobalHdCoverOpen}
+        onClose={() => setIsGlobalHdCoverOpen(false)}
+        initialCoverUrl={currentBook?.thumb_url}
+        initialBookName={currentBook?.book_name}
+        initialAuthor={currentBook?.author}
       />
     </div>
   );

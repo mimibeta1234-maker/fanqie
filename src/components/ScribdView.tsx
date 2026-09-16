@@ -21,7 +21,6 @@ import {
   Maximize2,
   Minimize2,
   AlignLeft,
-  Sparkles,
   Globe,
   Printer,
 } from 'lucide-react';

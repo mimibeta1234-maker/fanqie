@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bookmark, Download, FileText, GitCompare, Sparkles, BookOpen, BookmarkCheck } from 'lucide-react';
+import { Bookmark, Download, FileText, GitCompare, Image as ImageIcon, BookOpen, BookmarkCheck } from 'lucide-react';
 
 export type StudioTab = 'downloader' | 'qimao' | 'zhihu' | 'scribd' | 'compare';
 
@@ -9,6 +9,7 @@ interface NavbarProps {
   onOpenSavedBooks?: () => void;
   savedCount?: number;
   onLogout?: () => void;
+  onOpenHdCoverModal?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -16,7 +17,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onTabChange,
   onOpenSavedBooks,
   savedCount = 0,
-  onLogout
+  onLogout,
+  onOpenHdCoverModal
 }) => {
   return (
     <header className="border-b border-stone-200 bg-white/90 backdrop-blur-md sticky top-0 z-30" id="main-header">
@@ -108,6 +110,19 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Right tools */}
         <div className="flex items-center gap-2">
+          {onOpenHdCoverModal && (
+            <button
+              onClick={onOpenHdCoverModal}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 transition-colors cursor-pointer"
+              id="btn-nav-hd-cover"
+              title="Trích xuất và tải bìa gốc Ultra HD Fanqie"
+            >
+              <ImageIcon className="w-3.5 h-3.5 text-red-600" />
+              <span className="hidden sm:inline">Bìa HD Fanqie</span>
+              <span className="sm:hidden">Bìa HD</span>
+            </button>
+          )}
+
           {(activeTab === 'downloader' || activeTab === 'qimao') && onOpenSavedBooks && (
             <button
               onClick={onOpenSavedBooks}

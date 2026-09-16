@@ -1,4 +1,4 @@
-import { getBookInfo, getCatalog, getChapters, getChapter, formatChapterText, parseBookId, formatAbstract } from './fanqieCore';
+import { getBookInfo, getCatalog, getChapters, getChapter, formatChapterText, parseBookId, formatAbstract, parseFanqieCoverFromUrl } from './fanqieCore';
 import { getQimaoChapter } from './qimaoCore';
 import { generateEpub } from './epubGenerator';
 
@@ -282,11 +282,19 @@ class DownloadManager {
       });
     }
 
+    let coverUrl = info.thumb_url;
+    if (task.provider !== 'qimao' && coverUrl) {
+      const parsed = parseFanqieCoverFromUrl(coverUrl);
+      if (parsed) {
+        coverUrl = `https://p3-novel.byteimg.com/origin/${parsed.folder}/${parsed.hash}`;
+      }
+    }
+
     return await generateEpub({
       title: info.book_name || (task.provider === 'qimao' ? "Truyện Qimao" : "Truyện Fanqie"),
       author: info.author || "Tác giả",
       description: cleanAbstract,
-      coverUrl: info.thumb_url,
+      coverUrl,
       chapters: epubChapters
     });
   }

@@ -10,7 +10,8 @@ import {
   getChapters,
   formatChapterText,
   searchBooks,
-  formatAbstract
+  formatAbstract,
+  extractFanqieHdCover
 } from "./server/fanqieCore";
 import {
   parseQimaoBookId,
@@ -116,6 +117,60 @@ async function startServer() {
     } catch (err: any) {
       console.error("Book info error:", err);
       res.status(500).json({ success: false, error: err.message || "Không thể tải thông tin truyện" });
+    }
+  });
+
+  // Extract HD cover for Fanqie
+  app.get("/api/book/cover/extract", async (req, res) => {
+    try {
+      const input = String(req.query.input || req.query.url || req.query.id || "").trim();
+      const bookName = String(req.query.bookName || "").trim();
+      const author = String(req.query.author || "").trim();
+
+      if (!input) {
+        return res.status(400).json({ success: false, error: "Thiếu link ảnh bìa, ID truyện hoặc link truyện" });
+      }
+
+      const coverData = await extractFanqieHdCover(input, bookName, author);
+      res.json({ success: true, cover: coverData });
+    } catch (err: any) {
+      console.error("Cover extract error:", err);
+      res.status(500).json({ success: false, error: err.message || "Không thể trích xuất bìa HD" });
+    }
+  });
+
+  // Download HD cover proxy (handles CORS and enforces file download header)
+  app.get("/api/book/cover/download", async (req, res) => {
+    try {
+      const targetUrl = String(req.query.url || "").trim();
+      const filename = String(req.query.filename || "Bia_Truyen_HD.jpg").trim();
+
+      if (!targetUrl || !targetUrl.startsWith("http")) {
+        return res.status(400).json({ success: false, error: "Thiếu link ảnh hợp lệ" });
+      }
+
+      const imgRes = await fetch(targetUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "Referer": "https://fanqienovel.com/"
+        }
+      });
+
+      if (!imgRes.ok) {
+        return res.status(imgRes.status).json({ success: false, error: "Không thể tải ảnh từ máy chủ" });
+      }
+
+      const contentType = imgRes.headers.get("content-type") || (filename.endsWith(".png") ? "image/png" : "image/jpeg");
+      const buffer = Buffer.from(await imgRes.arrayBuffer());
+
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
+      res.setHeader("Content-Length", buffer.length);
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.send(buffer);
+    } catch (err: any) {
+      console.error("Cover download proxy error:", err);
+      res.status(500).json({ success: false, error: err.message || "Lỗi khi tải ảnh bìa" });
     }
   });
 

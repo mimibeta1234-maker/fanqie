@@ -1569,6 +1569,72 @@ export async function searchBooks(query, count = 10) {
   }
 }
 
+export function parseFanqieCoverFromUrl(rawUrl: string): { folder: string; hash: string } | null {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  const decoded = decodeURIComponent(rawUrl);
+  // Match folder like novel-pic, novel-images, tos-cn-i-*, novel-static
+  const match = decoded.match(/(novel-pic|novel-images|tos-cn-i-[a-z0-9_-]+|novel-static)\/([a-f0-9]{32})/i);
+  if (match) {
+    return { folder: match[1], hash: match[2].toLowerCase() };
+  }
+  // Match standalone 32-hex hash
+  const hashMatch = decoded.match(/([a-f0-9]{32})/i);
+  if (hashMatch) {
+    return { folder: 'novel-pic', hash: hashMatch[1].toLowerCase() };
+  }
+  return null;
+}
+
+export function buildHdCoverUrls(folder: string, hash: string) {
+  return {
+    originalUrl: `https://p3-novel.byteimg.com/origin/${folder}/${hash}`,
+    hd2kUrl: `https://p3-novel.byteimg.com/${folder}/${hash}~tplv-resize:1600:0.image`,
+    hd1200Url: `https://p3-novel.byteimg.com/${folder}/${hash}~tplv-resize:1200:0.image`,
+    pngUrl: `https://p3-novel.byteimg.com/origin/${folder}/${hash}.png`
+  };
+}
+
+export async function extractFanqieHdCover(input: string, bookNameHint?: string, authorHint?: string) {
+  if (!input || typeof input !== 'string') {
+    throw new Error('Vui lòng cung cấp link ảnh bìa, ID truyện hoặc link truyện Fanqie');
+  }
+
+  const trimmed = input.trim();
+  let bookName = bookNameHint || '';
+  let author = authorHint || '';
+
+  // Case 1: Direct cover URL or hash
+  let parsed = parseFanqieCoverFromUrl(trimmed);
+
+  // Case 2: If input is a book ID or link to book page
+  if (!parsed) {
+    const bookId = parseBookId(trimmed);
+    if (bookId) {
+      const info = await getBookInfo(bookId);
+      if (info && info.cover_url) {
+        parsed = parseFanqieCoverFromUrl(info.cover_url);
+        bookName = info.title || bookName;
+        author = info.author || author;
+      }
+    }
+  }
+
+  if (!parsed) {
+    throw new Error('Không tìm thấy mã băm ảnh bìa hợp lệ của Fanqie');
+  }
+
+  const urls = buildHdCoverUrls(parsed.folder, parsed.hash);
+
+  return {
+    success: true,
+    hash: parsed.hash,
+    folder: parsed.folder,
+    bookName,
+    author,
+    ...urls
+  };
+}
+
 export {
   getBookInfo,
   getCatalog,

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { BookOpen, User, List, Bookmark, FileSearch, BookmarkCheck, ChevronDown, ChevronUp } from 'lucide-react';
+import { BookOpen, User, List, Bookmark, FileSearch, BookmarkCheck, ChevronDown, ChevronUp, Image as ImageIcon } from 'lucide-react';
 import { Book } from '../types';
 import { getAbstractParagraphs } from '../utils/textFormatter';
+import { HdCoverModal } from './HdCoverModal';
 
 interface BookDetailCardProps {
   book: Book;
@@ -25,19 +26,36 @@ export const BookDetailCard: React.FC<BookDetailCardProps> = ({
   onOpenMarkedChapters
 }) => {
   const [showFullAbstract, setShowFullAbstract] = useState<boolean>(false);
+  const [isHdCoverOpen, setIsHdCoverOpen] = useState<boolean>(false);
 
   return (
     <div className="bg-white rounded-xl border border-stone-200 p-4 sm:p-5 shadow-xs" id="book-detail-card">
       <div className="flex gap-4 sm:gap-5 items-start">
         {/* Cover */}
-        <div className="w-20 sm:w-24 h-28 sm:h-32 shrink-0 bg-stone-100 rounded-lg overflow-hidden border border-stone-200">
+        <div
+          onClick={() => setIsHdCoverOpen(true)}
+          className="w-20 sm:w-24 h-28 sm:h-32 shrink-0 bg-stone-100 rounded-lg overflow-hidden border border-stone-200 relative group cursor-pointer shadow-xs"
+          title="Bấm để xem và tải ảnh bìa gốc Ultra HD"
+        >
           {book.thumb_url ? (
-            <img
-              src={book.thumb_url}
-              alt={book.book_name}
-              referrerPolicy="no-referrer"
-              className="w-full h-full object-cover"
-            />
+            <>
+              <img
+                src={book.thumb_url}
+                alt={book.book_name}
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+              />
+              {/* HD Badge Overlay */}
+              <div className="absolute top-1 right-1 bg-black/75 backdrop-blur-xs text-amber-300 text-[9px] font-black px-1.5 py-0.5 rounded shadow-xs flex items-center gap-0.5">
+                <ImageIcon className="w-2.5 h-2.5" />
+                <span>HD</span>
+              </div>
+              {/* Hover overlay hint */}
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-semibold gap-1 p-1 text-center">
+                <ImageIcon className="w-4 h-4 text-amber-300" />
+                <span>Bìa HD</span>
+              </div>
+            </>
           ) : (
             <div className="w-full h-full flex items-center justify-center text-stone-300">
               <BookOpen className="w-6 h-6" />
@@ -193,9 +211,30 @@ export const BookDetailCard: React.FC<BookDetailCardProps> = ({
                 <span>{isSaved ? "Đã lưu truyện" : "Lưu truyện"}</span>
               </button>
             )}
+
+            {/* Extract HD Cover Button */}
+            <button
+              type="button"
+              onClick={() => setIsHdCoverOpen(true)}
+              className="px-3 py-1.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+              id="btn-open-hd-cover-modal"
+              title="Trích xuất và tải ảnh bìa gốc độ phân giải cao Ultra HD (1200p / 1600p / Gốc)"
+            >
+              <ImageIcon className="w-3.5 h-3.5 text-amber-200" />
+              <span>Trích xuất Bìa HD</span>
+            </button>
           </div>
         </div>
       </div>
+
+      {/* HD Cover Extraction Modal */}
+      <HdCoverModal
+        isOpen={isHdCoverOpen}
+        onClose={() => setIsHdCoverOpen(false)}
+        initialCoverUrl={book.thumb_url}
+        initialBookName={book.book_name}
+        initialAuthor={book.author}
+      />
     </div>
   );
 };

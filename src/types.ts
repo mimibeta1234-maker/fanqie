@@ -54,6 +54,17 @@ export interface SavedBook {
   saved_at: number;
 }
 
+export interface HdCoverData {
+  hash: string;
+  folder: string;
+  originalUrl: string;
+  hd2kUrl: string;
+  hd1200Url: string;
+  pngUrl: string;
+  bookName?: string;
+  author?: string;
+}
+
 export interface PlotMatch {
   itemId: string;
   chapterIndex: number;
