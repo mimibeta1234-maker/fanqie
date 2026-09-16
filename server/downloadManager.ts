@@ -1,4 +1,4 @@
-import { getBookInfo, getCatalog, getChapters, getChapter, formatChapterText, parseBookId } from './fanqieCore';
+import { getBookInfo, getCatalog, getChapters, getChapter, formatChapterText, parseBookId, formatAbstract } from './fanqieCore';
 import { getQimaoChapter } from './qimaoCore';
 import { generateEpub } from './epubGenerator';
 
@@ -19,13 +19,21 @@ export interface DownloadTask {
   errorMessage?: string;
   chapters: { index: number; itemId: string; title: string; content: string; error?: string }[];
   selectedRange?: { start: number; end: number };
+  includeIntro?: boolean;
 }
 
 class DownloadManager {
   private tasks: Map<string, DownloadTask> = new Map();
   private abortControllers: Map<string, AbortController> = new Map();
 
-  createTask(bookId: string, bookInfo: any, catalog: any, range?: { start: number; end: number }, provider: 'fanqie' | 'qimao' = 'fanqie'): DownloadTask {
+  createTask(
+    bookId: string,
+    bookInfo: any,
+    catalog: any,
+    range?: { start: number; end: number },
+    provider: 'fanqie' | 'qimao' = 'fanqie',
+    includeIntro: boolean = true
+  ): DownloadTask {
     const taskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const allChapters = catalog.chapter_list || [];
 
@@ -48,12 +56,13 @@ class DownloadManager {
       startTime: Date.now(),
       speed: '0 chap/s',
       chapters: targetChapters.map((ch: any, idx: number) => ({
-        index: idx + 1,
+        index: (range ? range.start + idx : idx + 1),
         itemId: ch.item_id,
         title: ch.title,
         content: '',
       })),
-      selectedRange: range
+      selectedRange: range,
+      includeIntro
     };
 
     this.tasks.set(taskId, task);
@@ -203,9 +212,32 @@ class DownloadManager {
     const headerLines = [
       `Tên truyện: ${info.book_name || "Không rõ"}`,
       `Tác giả: ${info.author || "Không rõ"}`,
-      `Tag: ${tagVal}`,
-      `Số chương: ${totalCount}`
+      `Thể loại / Tag: ${tagVal}`,
     ];
+
+    if (task.selectedRange) {
+      headerLines.push(`Khoảng chương tải: Từ chương ${task.selectedRange.start} đến chương ${task.selectedRange.end} (${task.totalChapters} chương)`);
+    } else {
+      headerLines.push(`Số chương: ${totalCount}`);
+    }
+
+    // Include book description/intro if requested and available
+    const shouldIncludeIntro = task.includeIntro !== false;
+    const rawIntro = info.abstract || info.summary || info.description || "";
+    const cleanAbstract = formatAbstract(rawIntro);
+
+    if (shouldIncludeIntro && cleanAbstract) {
+      headerLines.push(
+        '',
+        '========================================',
+        'GIỚI THIỆU',
+        '========================================',
+        cleanAbstract,
+        '========================================',
+        'NỘI DUNG',
+        '========================================'
+      );
+    }
 
     const chapterBlocks: string[] = [];
     for (const ch of task.chapters) {
@@ -238,12 +270,24 @@ class DownloadManager {
         content: ch.content
       }));
 
+    const shouldIncludeIntro = task.includeIntro !== false;
+    const rawIntro = info.abstract || info.summary || info.description || "";
+    const cleanAbstract = formatAbstract(rawIntro);
+
+    const epubChapters = [...validChapters];
+    if (shouldIncludeIntro && cleanAbstract) {
+      epubChapters.unshift({
+        title: "Giới thiệu",
+        content: cleanAbstract
+      });
+    }
+
     return await generateEpub({
       title: info.book_name || (task.provider === 'qimao' ? "Truyện Qimao" : "Truyện Fanqie"),
       author: info.author || "Tác giả",
-      description: info.abstract,
+      description: cleanAbstract,
       coverUrl: info.thumb_url,
-      chapters: validChapters
+      chapters: epubChapters
     });
   }
 }

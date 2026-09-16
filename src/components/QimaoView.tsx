@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Book, Catalog, DownloadTaskStatus } from '../types';
 import { saveBook, removeSavedBook, isBookSaved } from '../utils/savedBooks';
+import { getAbstractParagraphs } from '../utils/textFormatter';
 import { ChapterListModal } from './ChapterListModal';
 import { ReaderModal } from './ReaderModal';
 import { SearchResultsModal } from './SearchResultsModal';
@@ -250,7 +251,8 @@ export const QimaoView: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           bookId: currentBook.book_id,
-          range
+          range,
+          includeIntro: true
         })
       });
       const data = await res.json();
@@ -449,22 +451,41 @@ export const QimaoView: React.FC = () => {
                 </div>
 
                 {/* Abstract */}
-                {currentBook.abstract && (
-                  <div className="mt-2.5">
-                    <p className={`text-xs text-stone-600 leading-relaxed ${showFullAbstract ? '' : 'line-clamp-2'}`}>
-                      {currentBook.abstract}
-                    </p>
-                    {currentBook.abstract.length > 90 && (
-                      <button
-                        type="button"
-                        onClick={() => setShowFullAbstract(!showFullAbstract)}
-                        className="text-[11px] text-amber-700 hover:text-amber-800 font-medium mt-1 cursor-pointer"
-                      >
-                        {showFullAbstract ? 'Thu gọn' : 'Xem thêm'}
-                      </button>
-                    )}
-                  </div>
-                )}
+                {currentBook.abstract && (() => {
+                  const paragraphs = getAbstractParagraphs(currentBook.abstract);
+                  const isLong = paragraphs.length > 2 || currentBook.abstract.length > 90;
+                  return (
+                    <div className="mt-2.5 bg-stone-50/70 p-2.5 rounded-lg border border-stone-200/70">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-bold text-stone-500 uppercase tracking-wide">
+                          Giới thiệu
+                        </span>
+                        {isLong && (
+                          <button
+                            type="button"
+                            onClick={() => setShowFullAbstract(!showFullAbstract)}
+                            className="text-[11px] text-amber-700 hover:text-amber-800 font-semibold cursor-pointer"
+                          >
+                            {showFullAbstract ? 'Thu gọn' : 'Xem đầy đủ'}
+                          </button>
+                        )}
+                      </div>
+                      <div className={`text-xs text-stone-700 leading-relaxed ${showFullAbstract ? 'max-h-72 overflow-y-auto pr-1' : ''}`}>
+                        {showFullAbstract ? (
+                          <div className="space-y-2">
+                            {paragraphs.map((p, idx) => (
+                              <p key={idx} className="indent-3 text-justify">{p}</p>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="line-clamp-2 text-stone-600">
+                            {paragraphs[0] || currentBook.abstract}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Actions */}
                 <div className="flex flex-wrap items-center gap-2 mt-3.5 pt-2 border-t border-stone-100">

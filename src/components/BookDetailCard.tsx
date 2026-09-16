@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { BookOpen, User, List, Bookmark, FileSearch, BookmarkCheck } from 'lucide-react';
+import { BookOpen, User, List, Bookmark, FileSearch, BookmarkCheck, ChevronDown, ChevronUp } from 'lucide-react';
 import { Book } from '../types';
+import { getAbstractParagraphs } from '../utils/textFormatter';
 
 interface BookDetailCardProps {
   book: Book;
@@ -96,22 +97,43 @@ export const BookDetailCard: React.FC<BookDetailCardProps> = ({
           )}
 
           {/* Synopsis */}
-          {book.abstract && (
-            <div className="mt-2 text-xs text-stone-600 leading-relaxed">
-              <p className={showFullAbstract ? '' : 'line-clamp-2'}>
-                {book.abstract}
-              </p>
-              {book.abstract.length > 140 && (
-                <button
-                  type="button"
-                  onClick={() => setShowFullAbstract(!showFullAbstract)}
-                  className="text-[11px] text-red-600 hover:underline font-medium mt-0.5 cursor-pointer"
-                >
-                  {showFullAbstract ? "Thu gọn" : "Xem thêm"}
-                </button>
-              )}
-            </div>
-          )}
+          {book.abstract && (() => {
+            const paragraphs = getAbstractParagraphs(book.abstract);
+            const isLong = paragraphs.length > 2 || book.abstract.length > 120;
+            return (
+              <div className="mt-2.5 bg-stone-50/70 p-2.5 rounded-lg border border-stone-200/70">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-bold text-stone-500 uppercase tracking-wide">
+                    Giới thiệu
+                  </span>
+                  {isLong && (
+                    <button
+                      type="button"
+                      onClick={() => setShowFullAbstract(!showFullAbstract)}
+                      className="inline-flex items-center gap-0.5 text-[11px] text-red-600 hover:text-red-700 font-semibold cursor-pointer"
+                    >
+                      <span>{showFullAbstract ? "Thu gọn" : "Xem đầy đủ"}</span>
+                      {showFullAbstract ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    </button>
+                  )}
+                </div>
+
+                <div className={`text-xs text-stone-700 leading-relaxed ${showFullAbstract ? 'max-h-96 overflow-y-auto pr-1 select-text' : ''}`}>
+                  {showFullAbstract ? (
+                    <div className="space-y-2">
+                      {paragraphs.map((para, pIdx) => (
+                        <p key={pIdx} className="text-justify indent-3">{para}</p>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="line-clamp-2 text-stone-600">
+                      {paragraphs[0] || book.abstract}
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Action buttons */}
           <div className="mt-3.5 flex flex-wrap items-center gap-2">

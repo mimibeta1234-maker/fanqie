@@ -9,7 +9,8 @@ import {
   getChapter,
   getChapters,
   formatChapterText,
-  searchBooks
+  searchBooks,
+  formatAbstract
 } from "./server/fanqieCore";
 import {
   parseQimaoBookId,
@@ -104,7 +105,7 @@ async function startServer() {
         score: bookData.score || "9.0",
         category: bookData.category || "Tiểu thuyết",
         tags: bookData.tags || bookData.category || "Tiểu thuyết",
-        abstract: bookData.book_abstract_v2 || bookData.abstract || bookData.summary || "",
+        abstract: formatAbstract(bookData.book_abstract_v2 || bookData.abstract || bookData.summary || ""),
         word_number: bookData.word_number || "0",
         chapter_count: Number(bookData.content_chapter_number || bookData.serial_count || bookData.chapter_count || 0),
         last_chapter_title: bookData.last_chapter_title || "",
@@ -278,7 +279,7 @@ async function startServer() {
 
   app.post("/api/qimao/download/start", async (req, res) => {
     try {
-      const { bookId, range } = req.body;
+      const { bookId, range, includeIntro } = req.body;
       if (!bookId) {
         return res.status(400).json({ success: false, error: "Thiếu ID truyện" });
       }
@@ -286,7 +287,7 @@ async function startServer() {
       const bookInfo = await getQimaoBookInfo(cleanId);
       const catalog = await getQimaoCatalog(cleanId);
 
-      const task = downloadManager.createTask(cleanId, bookInfo, catalog, range, 'qimao');
+      const task = downloadManager.createTask(cleanId, bookInfo, catalog, range, 'qimao', includeIntro !== false);
       downloadManager.runDownload(task.taskId);
 
       res.json({ success: true, taskId: task.taskId, totalChapters: task.totalChapters });
@@ -299,7 +300,7 @@ async function startServer() {
   // Start download task
   app.post("/api/download/start", async (req, res) => {
     try {
-      const { bookId, range } = req.body;
+      const { bookId, range, includeIntro } = req.body;
       if (!bookId) {
         return res.status(400).json({ success: false, error: "Thiếu ID truyện" });
       }
@@ -314,12 +315,12 @@ async function startServer() {
         author: bookData.author || "Tác giả",
         thumb_url: bookData.thumb_url || bookData.detail_page_thumb_url || bookData.cover_url || "",
         score: bookData.score || "9.0",
-        abstract: bookData.book_abstract_v2 || bookData.abstract || bookData.summary || "",
+        abstract: formatAbstract(bookData.book_abstract_v2 || bookData.abstract || bookData.summary || ""),
         category: bookData.category || "Tiểu thuyết",
         tags: bookData.tags || bookData.category || "Tiểu thuyết"
       };
 
-      const task = downloadManager.createTask(cleanId, bookInfo, catalog, range);
+      const task = downloadManager.createTask(cleanId, bookInfo, catalog, range, 'fanqie', includeIntro !== false);
       // Run async in background
       downloadManager.runDownload(task.taskId);
 

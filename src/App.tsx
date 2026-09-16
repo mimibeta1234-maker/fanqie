@@ -228,7 +228,7 @@ export default function App() {
   };
 
   // Start download task
-  const handleStartDownload = async (range?: { start: number; end: number }) => {
+  const handleStartDownload = async (range?: { start: number; end: number }, includeIntro: boolean = true) => {
     if (!currentBook) return;
     setErrorMessage(null);
 
@@ -238,7 +238,8 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           bookId: currentBook.book_id,
-          range
+          range,
+          includeIntro
         })
       });
       const data = await res.json();
@@ -401,6 +402,7 @@ export default function App() {
                   onStartDownload={handleStartDownload}
                   onCancelDownload={handleCancelDownload}
                   bookName={currentBook.book_name}
+                  abstract={currentBook.abstract}
                 />
               </div>
             )}

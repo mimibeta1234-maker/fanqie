@@ -1389,7 +1389,7 @@ function apiFetch(url, options = {}) {
       title: bookInfo.book_name || bookInfo.original_book_name || "Truyện Fanqie",
       author: bookInfo.author || "Tác giả",
       cover_url: bookInfo.thumb_url || bookInfo.detail_page_thumb_url || "",
-      summary: bookInfo.book_abstract_v2 || bookInfo.abstract || "",
+      summary: formatAbstract(bookInfo.book_abstract_v2 || bookInfo.abstract || ""),
       tags: tags || bookInfo.category || "Tiểu thuyết",
       category: bookInfo.category || (tags.split(",")[0]?.trim() || "Tiểu thuyết"),
       score: bookInfo.score || "9.0",
@@ -1440,6 +1440,37 @@ export function parseBookId(input) {
   if (anyDigits) return anyDigits[1];
 
   return trimmed;
+}
+
+/**
+ * Normalizes and formats novel abstracts / synopses so paragraphs are cleanly separated
+ * instead of sticking together into a single wall of text.
+ */
+export function formatAbstract(raw: string | undefined | null): string {
+  if (!raw) return "";
+  let s = String(raw);
+
+  // 1. Convert HTML line breaks to newlines
+  s = s.replace(/<br\s*\/?>/gi, '\n')
+       .replace(/<\/p>/gi, '\n\n')
+       .replace(/<[^>]+>/g, '');
+
+  // 2. Standardize carriage returns
+  s = s.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // 3. Convert multi-space / full-width em-space indentations into paragraph breaks
+  // Fanqie and other Chinese sources often encode paragraph breaks as 2+ spaces or \u3000 (em-space)
+  s = s.replace(/[\t\u3000\u00A0 ]{2,}/g, '\n\n');
+
+  // 4. Handle Chinese punctuation endings (。！？】”」』) followed by space/indent
+  s = s.replace(/([。！？】”」』])[\t\u3000\u00A0 ]+(?=[^\s])/g, '$1\n\n');
+
+  // 5. Clean up each line and eliminate redundant blanks
+  const lines = s.split('\n')
+    .map(l => l.replace(/^[\s\u3000\u00A0]+/, '').replace(/[\s\u3000\u00A0]+$/, ''))
+    .filter(Boolean);
+
+  return lines.join('\n\n');
 }
 
 export function formatChapterText(htmlOrText, title) {
@@ -1522,7 +1553,7 @@ export async function searchBooks(query, count = 10) {
             thumb_url: b.thumb_url || b.detail_page_thumb_url || b.thumbUri || "",
             score: b.score || "9.0",
             category: b.category || "Tiểu thuyết",
-            abstract: b.abstract || b.book_abstract_v2 || b.summary || "",
+            abstract: formatAbstract(b.abstract || b.book_abstract_v2 || b.summary || ""),
             word_number: String(b.word_number || b.wordCount || "0"),
             chapter_count: chapterCount,
             last_chapter_title: b.last_chapter_title || b.lastChapterTitle || "",
