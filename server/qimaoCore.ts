@@ -287,6 +287,46 @@ export async function getQimaoBookInfo(bookId: string): Promise<QimaoBook> {
     } catch (e) {}
   }
 
+  // 3. Try Zongheng HTML Page Fallback if not found on Qimao (e.g. ID is from Zongheng)
+  if (!bookName) {
+    try {
+      const zhUrls = [
+        `https://huayu.zongheng.com/book/${cleanId}.html`,
+        `https://book.zongheng.com/book/${cleanId}.html`
+      ];
+      for (const zhUrl of zhUrls) {
+        if (bookName) break;
+        const res = await fetch(zhUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': 'https://search.zongheng.com/'
+          }
+        });
+        if (res.ok) {
+          const html = await res.text();
+          const $ = cheerio.load(html);
+          bookName = $('meta[property="og:title"]').attr('content') ||
+                     $('.book-name').text().trim() ||
+                     $('h1').first().text().trim() || '';
+          bookName = bookName.replace(/^[《<]/, '').replace(/[》>].*$/, '').trim();
+
+          author = $('meta[property="og:novel:author"]').attr('content') ||
+                   $('.au-name a').text().trim() ||
+                   $('.author-name').text().trim() || '';
+
+          cover = $('meta[property="og:image"]').attr('content') ||
+                  $('.book-img img').attr('src') || '';
+
+          intro = $('meta[property="og:description"]').attr('content') ||
+                  $('.book-dec p').text().trim() || '';
+
+          const cate = $('meta[property="og:novel:category"]').attr('content') || '';
+          if (cate) category = cate;
+        }
+      }
+    } catch (e) {}
+  }
+
   // Fetch catalog to get exact chapter count & latest chapter title
   let chapterCount = 0;
   try {
@@ -409,6 +449,51 @@ export async function getQimaoCatalog(bookId: string): Promise<{ chapter_list: Q
     }
   }
 
+  // Source C: Try Zongheng / Huayu chapter catalog (essential when bookId originates from Zongheng)
+  if (chapterList.length === 0) {
+    const zhCatalogUrls = [
+      `https://huayu.zongheng.com/showchapter/${cleanId}.html`,
+      `https://book.zongheng.com/showchapter/${cleanId}.html`
+    ];
+
+    for (const zhUrl of zhCatalogUrls) {
+      if (chapterList.length > 0) break;
+      try {
+        const res = await fetch(zhUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': 'https://search.zongheng.com/'
+          }
+        });
+        if (res.ok) {
+          const html = await res.text();
+          const $ = cheerio.load(html);
+          $('a[href*="/chapter/"]').each((index, el) => {
+            const href = $(el).attr('href') || '';
+            const title = $(el).text().trim();
+            const cidMatch = href.match(/chapter\/\d+\/(\d+)\.html/);
+            if (cidMatch && title) {
+              const itemId = cidMatch[1];
+              if (!seenIds.has(itemId)) {
+                seenIds.add(itemId);
+                const hasChapNum = /^(?:第|Chương\s*)\d+/i.test(title);
+                const formattedTitle = hasChapNum ? title : `第${index + 1}章 ${title}`;
+                const isVip = $(el).hasClass('vip') || $(el).find('em.vip').length > 0 || $(el).find('.icon-vip').length > 0;
+                chapterList.push({
+                  item_id: itemId,
+                  title: formattedTitle,
+                  is_vip: isVip
+                });
+              }
+            }
+          });
+        }
+      } catch (e: any) {
+        console.error("Zongheng showchapter catalog fetch error:", e.message);
+      }
+    }
+  }
+
   return {
     chapter_list: chapterList,
     total_count: chapterList.length
@@ -416,6 +501,8 @@ export async function getQimaoCatalog(bookId: string): Promise<{ chapter_list: Q
 }
 
 const zhBookIdCache = new Map<string, string>();
+const zhCatalogCache = new Map<string, Array<{ cid: string; title: string }>>();
+const quanbenSlugCache = new Map<string, string>();
 
 export async function getZonghengBookId(bookName: string): Promise<string | null> {
   if (!bookName) return null;
@@ -453,6 +540,125 @@ export async function getZonghengBookId(bookName: string): Promise<string | null
   return null;
 }
 
+export async function getZonghengChapters(zhBookId: string): Promise<Array<{ cid: string; title: string }>> {
+  if (zhCatalogCache.has(zhBookId)) {
+    return zhCatalogCache.get(zhBookId)!;
+  }
+  const urls = [
+    `https://huayu.zongheng.com/showchapter/${zhBookId}.html`,
+    `https://book.zongheng.com/showchapter/${zhBookId}.html`
+  ];
+  for (const u of urls) {
+    try {
+      const res = await fetch(u, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Referer': 'https://search.zongheng.com/'
+        }
+      });
+      if (res.ok) {
+        const html = await res.text();
+        const $ = cheerio.load(html);
+        const list: Array<{ cid: string; title: string }> = [];
+        const seen = new Set<string>();
+        $('a[href*="/chapter/"]').each((_, el) => {
+          const href = $(el).attr('href') || '';
+          const title = $(el).text().trim();
+          const m = href.match(/chapter\/\d+\/(\d+)\.html/);
+          if (m && title && !seen.has(m[1])) {
+            seen.add(m[1]);
+            list.push({ cid: m[1], title });
+          }
+        });
+        if (list.length > 0) {
+          zhCatalogCache.set(zhBookId, list);
+          return list;
+        }
+      }
+    } catch (e) {}
+  }
+  return [];
+}
+
+async function getQuanbenSlug(bookName: string): Promise<string | null> {
+  if (!bookName) return null;
+  const cleanName = bookName.replace(/<[^>]+>/g, '').replace(/[，,！!？?：:].*$/, '').trim();
+  if (!cleanName) return null;
+  if (quanbenSlugCache.has(cleanName)) return quanbenSlugCache.get(cleanName)!;
+
+  try {
+    const searchUrl = `https://quanben.io/index.php?c=book&a=search&keywords=${encodeURIComponent(cleanName)}`;
+    const res = await fetch(searchUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    });
+    if (res.ok) {
+      const html = await res.text();
+      const $ = cheerio.load(html);
+      let matchedSlug: string | null = null;
+      $('a[href*="/n/"]').each((_, el) => {
+        const href = $(el).attr('href') || '';
+        const text = $(el).text().trim();
+        const m = href.match(/\/n\/([^\/]+)\/?$/);
+        if (m && (text.includes(cleanName) || cleanName.includes(text) || cleanName.slice(0, 4).split('').every(ch => text.includes(ch)))) {
+          matchedSlug = m[1];
+          return false;
+        }
+      });
+      if (matchedSlug) {
+        quanbenSlugCache.set(cleanName, matchedSlug);
+        return matchedSlug;
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
+async function fetchQuanbenChapter(slug: string, chapNum: number): Promise<{ title?: string; paras: string[] }> {
+  try {
+    const url = `https://quanben.io/n/${slug}/${chapNum}.html`;
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    });
+    if (!res.ok) return { paras: [] };
+    const html = await res.text();
+    const $ = cheerio.load(html);
+    const title = $('h1, .headline, .title').first().text().trim();
+    const paras: string[] = [];
+    $('#content p, #articlebody p, .articlebody p, .content p, p').each((_, el) => {
+      const t = $(el).text().trim();
+      if (t && t.length > 4 && !t.includes('quanben') && !t.includes('版权') && !t.includes('本站所有') && !t.includes('小说网') && !t.includes('手机阅读') && !t.includes('上一章') && !t.includes('下一章')) {
+        paras.push(t);
+      }
+    });
+    return { title, paras };
+  } catch (e) {
+    return { paras: [] };
+  }
+}
+
+function extractChapterNumber(title?: string, index?: number, fallbackId?: string): number {
+  if (index && index > 0) return index;
+  if (title) {
+    const m = title.match(/第\s*(\d+)\s*章/) || title.match(/Chương\s*(\d+)/i) || title.match(/^(\d+)[\s.、_-]/);
+    if (m) {
+      const parsed = parseInt(m[1], 10);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+  }
+  if (fallbackId) {
+    const m = fallbackId.match(/(\d+)$/);
+    if (m) {
+      const parsed = parseInt(m[1].slice(-4), 10);
+      if (!isNaN(parsed) && parsed > 0 && parsed < 5000) return parsed;
+    }
+  }
+  return index || 1;
+}
+
 /**
  * Fetch Full Unabridged Chapter Content
  */
@@ -472,7 +678,7 @@ export async function getQimaoChapter(
   // 1. Try Qimao Desktop Reading Page
   try {
     const qUrl = `https://www.qimao.com/shuku/${cleanBookId}-${cleanChapId}/`;
-    const res = await qimaoFetch(qUrl, { timeout: 4000 });
+    const res = await qimaoFetch(qUrl, { timeout: 2500 });
 
     if (res.ok) {
       const html = await res.text();
@@ -489,34 +695,87 @@ export async function getQimaoChapter(
     }
   } catch (e) {}
 
-  // 2. If Qimao web page returned 0 paragraphs, try Zongheng Mobile Reader page (native official free reader)
+  // 2. Multi-source Rescue Fallback if Qimao web returned 0 paragraphs (VIP / locked chapter)
   if (paras.length === 0 && bookName) {
-    try {
-      const zhBookId = await getZonghengBookId(bookName);
-      if (zhBookId) {
-        const zhUrl = `https://m.zongheng.com/chapter/${zhBookId}/${cleanChapId}.html`;
-        const res = await fetch(zhUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
-            'Referer': `https://m.zongheng.com/book/${zhBookId}.html`
-          }
-        });
-        if (res.ok) {
-          const html = await res.text();
-          const $ = cheerio.load(html);
-          const pageTitle = $('title').text().trim().split('_')[0] || '';
-          if (pageTitle && !fetchedTitle) fetchedTitle = pageTitle;
+    const chapNum = extractChapterNumber(chapterTitle || fetchedTitle, chapterIndex, cleanChapId);
 
-          $('.content p, .reader p, #reader-content p, .chap-content p, p').each((_, el) => {
-            const t = $(el).text().trim();
-            if (t && t.length > 5 && !t.includes('下载') && !t.includes('App') && !t.includes('七猫') && !t.includes('纵横')) {
-              paras.push(t);
-            }
-          });
+    // Fallback A: Rescue via Quanben Full-text Engine
+    try {
+      const slug = await getQuanbenSlug(bookName);
+      if (slug) {
+        const qbRes = await fetchQuanbenChapter(slug, chapNum);
+        if (qbRes.paras.length > 0) {
+          paras = qbRes.paras;
+          if (qbRes.title && !fetchedTitle) fetchedTitle = qbRes.title;
         }
       }
     } catch (e: any) {
-      console.error("Zongheng mobile chapter fetch error:", e.message);
+      console.error("Quanben fallback error:", e.message);
+    }
+
+    // Fallback B: Rescue via Zongheng Desktop / Mobile Reader with real chapter ID mapping
+    if (paras.length === 0) {
+      try {
+        const zhBookId = await getZonghengBookId(bookName);
+        if (zhBookId) {
+          const zhList = await getZonghengChapters(zhBookId);
+          // Find chapter by index or title matching
+          let matchedZhChap = zhList[chapNum - 1];
+          if (!matchedZhChap && fetchedTitle) {
+            const cleanT = fetchedTitle.replace(/^(?:第\s*\d+\s*章|Chương\s*\d+)\s*/i, '').trim();
+            matchedZhChap = zhList.find(c => c.title.includes(cleanT) || cleanT.includes(c.title));
+          }
+
+          if (matchedZhChap) {
+            // Try Desktop Reader first
+            const desktopUrl = `https://read.zongheng.com/chapter/${zhBookId}/${matchedZhChap.cid}.html`;
+            const dRes = await fetch(desktopUrl, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://huayu.zongheng.com/'
+              }
+            });
+            if (dRes.ok) {
+              const dHtml = await dRes.text();
+              const $d = cheerio.load(dHtml);
+              const dParas: string[] = [];
+              $d('.content p, .reader-main p').each((_, el) => {
+                const t = $d(el).text().trim();
+                if (t && t.length > 5 && !t.includes('下 载') && !t.includes('纵横')) {
+                  dParas.push(t);
+                }
+              });
+              if (dParas.length > paras.length) {
+                paras = dParas;
+                if (!fetchedTitle) fetchedTitle = matchedZhChap.title;
+              }
+            }
+
+            // If desktop gave few paragraphs, try mobile
+            if (paras.length === 0) {
+              const mUrl = `https://m.zongheng.com/chapter/${zhBookId}/${matchedZhChap.cid}.html`;
+              const mRes = await fetch(mUrl, {
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15',
+                  'Referer': `https://m.zongheng.com/book/${zhBookId}.html`
+                }
+              });
+              if (mRes.ok) {
+                const mHtml = await mRes.text();
+                const $m = cheerio.load(mHtml);
+                $m('.content p, .reader p, #reader-content p, .chap-content p, p').each((_, el) => {
+                  const t = $m(el).text().trim();
+                  if (t && t.length > 5 && !t.includes('下载') && !t.includes('App') && !t.includes('七猫') && !t.includes('纵横')) {
+                    paras.push(t);
+                  }
+                });
+              }
+            }
+          }
+        }
+      } catch (e: any) {
+        console.error("Zongheng chapter fetch error:", e.message);
+      }
     }
   }
 
