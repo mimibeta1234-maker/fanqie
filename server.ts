@@ -282,7 +282,7 @@ async function startServer() {
 
   app.get("/api/qimao/book/info", async (req, res) => {
     try {
-      const rawInput = String(req.query.id || req.query.url || "").trim();
+      const rawInput = String(req.query.id || req.query.url || req.query.bookId || req.query.book_id || "").trim();
       if (!rawInput) {
         return res.status(400).json({ success: false, error: "Vui lòng cung cấp ID hoặc link truyện Qimao/Zongheng" });
       }
@@ -297,7 +297,7 @@ async function startServer() {
 
   app.get("/api/qimao/book/catalog", async (req, res) => {
     try {
-      const rawInput = String(req.query.id || "").trim();
+      const rawInput = String(req.query.id || req.query.bookId || req.query.book_id || "").trim();
       if (!rawInput) {
         return res.status(400).json({ success: false, error: "Thiếu ID truyện Qimao" });
       }

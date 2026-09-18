@@ -2,6 +2,32 @@ import https from 'https';
 import http from 'http';
 import * as cheerio from 'cheerio';
 
+export function formatAbstract(raw: string | undefined | null): string {
+  if (!raw) return '';
+  let s = String(raw);
+
+  // 1. Convert HTML line breaks to newlines
+  s = s.replace(/<br\s*\/?>/gi, '\n')
+       .replace(/<\/p>/gi, '\n\n')
+       .replace(/<[^>]+>/g, '');
+
+  // 2. Standardize carriage returns
+  s = s.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // 3. Convert multi-space / full-width em-space indentations into paragraph breaks
+  s = s.replace(/[\t\u3000\u00A0 ]{2,}/g, '\n\n');
+
+  // 4. Handle Chinese punctuation endings (。！？】”」』) followed by space/indent
+  s = s.replace(/([。！？】”」』])[\t\u3000\u00A0 ]+(?=[^\s])/g, '$1\n\n');
+
+  // 5. Clean up each line and eliminate redundant blank lines
+  const lines = s.split('\n')
+    .map(l => l.replace(/^[\s\u3000\u00A0]+/, '').replace(/[\s\u3000\u00A0]+$/, ''))
+    .filter(Boolean);
+
+  return lines.join('\n\n');
+}
+
 export interface QimaoBook {
   book_id: string;
   book_name: string;
@@ -132,7 +158,7 @@ export async function searchQimaoBooks(keyword: string, limit: number = 20): Pro
             score: item.score || '9.2',
             category: item.category_1_name || 'Tiểu thuyết',
             tags: `${item.category_1_name || 'Tiểu thuyết'}, Qimao Miễn phí`,
-            abstract: intro,
+            abstract: formatAbstract(intro),
             word_number: wordsNum,
             chapter_count: Number(item.chapter_count || item.total_chapter_num || 0),
             last_chapter_title: item.latest_chapter_title || '',
@@ -188,7 +214,7 @@ export async function searchQimaoBooks(keyword: string, limit: number = 20): Pro
             score: '9.2',
             category: item.cateFineName || item.catePName || 'Tiểu thuyết',
             tags: `${item.cateFineName || item.catePName || 'Tiểu thuyết'}${item.keyword ? `, ${item.keyword}` : ''}`,
-            abstract: rawDesc,
+            abstract: formatAbstract(rawDesc),
             word_number: wordDisplay,
             chapter_count: 0,
             last_chapter_title: item.chapterName || '',
@@ -234,12 +260,28 @@ export async function getQimaoBookInfo(bookId: string): Promise<QimaoBook> {
         category = detail.category_1_name || 'Tiểu thuyết';
         totalWords = detail.words_num ? String(detail.words_num) : '0';
         latestChapterName = detail.latest_chapter_title || '';
+        if (detail.is_over === 1 || detail.is_over === '1') isCompleted = true;
       }
     }
   } catch (e) {}
 
-  // 2. Try Qimao Desktop HTML Page Fallback if needed
-  if (!bookName) {
+  // 1b. Dedicated Qimao Intro API (Official source for full synopsis)
+  if (!intro) {
+    try {
+      const introApiUrl = `https://www.qimao.com/api/book-detail/intro?book_id=${cleanId}`;
+      const introRes = await qimaoFetch(introApiUrl, { timeout: 4000 });
+      if (introRes.ok) {
+        const json = await introRes.json();
+        const apiIntro = json?.data?.intro;
+        if (apiIntro && typeof apiIntro === 'string') {
+          intro = apiIntro.trim();
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 2. Try Qimao Desktop HTML Page Fallback if bookName or intro is missing
+  if (!bookName || !intro) {
     try {
       const qimaoUrl = `https://www.qimao.com/shuku/${cleanId}/`;
       const res = await qimaoFetch(qimaoUrl, { timeout: 4000 });
@@ -248,54 +290,77 @@ export async function getQimaoBookInfo(bookId: string): Promise<QimaoBook> {
         const html = await res.text();
         const $ = cheerio.load(html);
 
-        bookName = $('meta[property="og:title"]').attr('content') ||
-                   $('meta[name="og:title"]').attr('content') ||
-                   $('.work-data-h1').text().trim() ||
-                   $('.book-title').text().trim() ||
-                   $('.title').first().text().trim() ||
-                   $('h1').first().text().trim() || '';
-        bookName = bookName.replace(/^[《<]/, '').replace(/[》>].*$/, '').trim();
+        if (!bookName) {
+          bookName = $('meta[property="og:title"]').attr('content') ||
+                     $('meta[name="og:title"]').attr('content') ||
+                     $('.work-data-h1').text().trim() ||
+                     $('.book-title').text().trim() ||
+                     $('.title').first().text().trim() ||
+                     $('h1').first().text().trim() || '';
+          bookName = bookName.replace(/^[《<]/, '').replace(/[》>].*$/, '').trim();
+        }
 
-        author = $('meta[property="og:novel:author"]').attr('content') ||
-                 $('.author-name').text().trim() ||
-                 $('.au-name').text().trim() ||
-                 $('.author').text().trim() || '';
+        if (!author) {
+          author = $('meta[property="og:novel:author"]').attr('content') ||
+                   $('.author-name').text().trim() ||
+                   $('.au-name').text().trim() ||
+                   $('.author').text().trim() || '';
+        }
 
-        cover = $('meta[property="og:image"]').attr('content') ||
-                $('.pic img').attr('src') ||
-                $('.book-pic img').attr('src') ||
-                $('.cover img').attr('src') || '';
+        if (!cover) {
+          cover = $('meta[property="og:image"]').attr('content') ||
+                  $('.pic img').attr('src') ||
+                  $('.book-pic img').attr('src') ||
+                  $('.cover img').attr('src') || '';
+        }
 
-        intro = $('meta[property="og:description"]').attr('content') ||
-                $('.work-data-intro').text().trim() ||
-                $('.intro').text().trim() ||
-                $('.desc').text().trim() || '';
+        if (!intro) {
+          const rawMetaDesc = $('meta[name="description"]').attr('content') || $('meta[property="og:description"]').attr('content') || '';
+          const metaMatch = rawMetaDesc.match(/简介[：:]\s*([\s\S]+)/);
+          const extractedMeta = metaMatch ? metaMatch[1].trim() : '';
 
-        const cate = $('meta[property="og:novel:category"]').attr('content') || $('.work-data-tag span').first().text().trim();
-        if (cate) category = cate;
+          intro = $('.intro').text().trim() ||
+                  $('.work-data-intro').text().trim() ||
+                  extractedMeta ||
+                  $('.desc').text().trim() ||
+                  rawMetaDesc;
+        }
+
+        if (!category) {
+          const cate = $('meta[property="og:novel:category"]').attr('content') || $('.work-data-tag span').first().text().trim();
+          if (cate) category = cate;
+        }
 
         const scripts = $('script').map((_, el) => $(el).html()).get().join('\n');
-        const bookNameMatch = scripts.match(/bookName\s*:\s*["']([^"']+)["']/);
-        if (bookNameMatch && !bookName) bookName = bookNameMatch[1];
-        const authorMatch = scripts.match(/pseudonym\s*:\s*["']([^"']+)["']/);
-        if (authorMatch && !author) author = authorMatch[1];
-        const coverMatch = scripts.match(/bookCover\s*:\s*["']([^"']+)["']/);
-        if (coverMatch && !cover) cover = coverMatch[1].replace(/\\u002F/g, '/');
-        const introMatch = scripts.match(/description\s*:\s*["']([^"']+)["']/);
-        if (introMatch && !intro) intro = introMatch[1].replace(/\\n/g, '\n').replace(/\\u002F/g, '/');
+        if (!bookName) {
+          const bookNameMatch = scripts.match(/bookName\s*:\s*["']([^"']+)["']/);
+          if (bookNameMatch) bookName = bookNameMatch[1];
+        }
+        if (!author) {
+          const authorMatch = scripts.match(/pseudonym\s*:\s*["']([^"']+)["']/);
+          if (authorMatch) author = authorMatch[1];
+        }
+        if (!cover) {
+          const coverMatch = scripts.match(/bookCover\s*:\s*["']([^"']+)["']/);
+          if (coverMatch) cover = coverMatch[1].replace(/\\u002F/g, '/');
+        }
+        if (!intro) {
+          const introMatch = scripts.match(/description\s*:\s*["']([^"']+)["']/);
+          if (introMatch) intro = introMatch[1].replace(/\\n/g, '\n').replace(/\\u002F/g, '/');
+        }
       }
     } catch (e) {}
   }
 
   // 3. Try Zongheng HTML Page Fallback if not found on Qimao (e.g. ID is from Zongheng)
-  if (!bookName) {
+  if (!bookName || !intro) {
     try {
       const zhUrls = [
         `https://huayu.zongheng.com/book/${cleanId}.html`,
         `https://book.zongheng.com/book/${cleanId}.html`
       ];
       for (const zhUrl of zhUrls) {
-        if (bookName) break;
+        if (bookName && intro) break;
         const res = await fetch(zhUrl, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -305,23 +370,53 @@ export async function getQimaoBookInfo(bookId: string): Promise<QimaoBook> {
         if (res.ok) {
           const html = await res.text();
           const $ = cheerio.load(html);
-          bookName = $('meta[property="og:title"]').attr('content') ||
-                     $('.book-name').text().trim() ||
-                     $('h1').first().text().trim() || '';
-          bookName = bookName.replace(/^[《<]/, '').replace(/[》>].*$/, '').trim();
+          if (!bookName) {
+            bookName = $('meta[property="og:title"]').attr('content') ||
+                       $('.book-name').text().trim() ||
+                       $('h1').first().text().trim() || '';
+            bookName = bookName.replace(/^[《<]/, '').replace(/[》>].*$/, '').trim();
+          }
 
-          author = $('meta[property="og:novel:author"]').attr('content') ||
-                   $('.au-name a').text().trim() ||
-                   $('.author-name').text().trim() || '';
+          if (!author) {
+            author = $('meta[property="og:novel:author"]').attr('content') ||
+                     $('.au-name a').text().trim() ||
+                     $('.author-name').text().trim() || '';
+          }
 
-          cover = $('meta[property="og:image"]').attr('content') ||
-                  $('.book-img img').attr('src') || '';
+          if (!cover) {
+            cover = $('meta[property="og:image"]').attr('content') ||
+                    $('.book-img img').attr('src') || '';
+          }
 
-          intro = $('meta[property="og:description"]').attr('content') ||
-                  $('.book-dec p').text().trim() || '';
+          if (!intro) {
+            intro = $('.book-dec p').text().trim() ||
+                    $('meta[property="og:description"]').attr('content') || '';
+          }
 
           const cate = $('meta[property="og:novel:category"]').attr('content') || '';
-          if (cate) category = cate;
+          if (cate && !category) category = cate;
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 4. Try Quanben Book Description Fallback if intro is still missing
+  if (!intro && bookName) {
+    try {
+      const slug = await getQuanbenSlug(bookName);
+      if (slug) {
+        const qbRes = await fetch(`https://quanben.io/n/${slug}/`, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          }
+        });
+        if (qbRes.ok) {
+          const qbHtml = await qbRes.text();
+          const $qb = cheerio.load(qbHtml);
+          const qbIntro = $qb('.description, .intro, #intro, p.desc').first().text().trim();
+          if (qbIntro && qbIntro.length > 20) {
+            intro = qbIntro;
+          }
         }
       }
     } catch (e) {}
@@ -339,6 +434,7 @@ export async function getQimaoBookInfo(bookId: string): Promise<QimaoBook> {
 
   const wordsNum = Number(totalWords || 0);
   const wordDisplay = wordsNum > 0 ? `${wordsNum} vạn chữ` : (chapterCount > 0 ? `${chapterCount} chương` : 'Đang cập nhật');
+  const cleanFormattedAbstract = formatAbstract(intro);
 
   return {
     book_id: cleanId,
@@ -348,7 +444,7 @@ export async function getQimaoBookInfo(bookId: string): Promise<QimaoBook> {
     score: '9.2',
     category: category,
     tags: `${category}, Miễn phí Qimao`,
-    abstract: intro || 'Truyện chữ miễn phí từ Qimao / Zongheng',
+    abstract: cleanFormattedAbstract || intro || '',
     word_number: wordDisplay,
     chapter_count: chapterCount,
     last_chapter_title: latestChapterName,

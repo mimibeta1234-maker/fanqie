@@ -12,7 +12,10 @@ import {
   FileText, 
   BookMarked,
   Eye,
-  X
+  X,
+  FileCheck,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { Book, Catalog, DownloadTaskStatus } from '../types';
 import { saveBook, removeSavedBook, isBookSaved } from '../utils/savedBooks';
@@ -59,6 +62,8 @@ export const QimaoView: React.FC = () => {
   const [rangeStart, setRangeStart] = useState<number>(1);
   const [rangeEnd, setRangeEnd] = useState<number>(1);
   const [exportFormat, setExportFormat] = useState<'txt' | 'epub'>('txt');
+  const [includeIntro, setIncludeIntro] = useState<boolean>(true);
+  const [showIntroPreview, setShowIntroPreview] = useState<boolean>(false);
 
   // Modals
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
@@ -252,7 +257,8 @@ export const QimaoView: React.FC = () => {
         body: JSON.stringify({
           bookId: currentBook.book_id,
           range,
-          includeIntro: true
+          includeIntro,
+          exportFormat
         })
       });
       const data = await res.json();
@@ -606,6 +612,57 @@ export const QimaoView: React.FC = () => {
                     </div>
                   </div>
                 )}
+
+                {/* Include Intro / Abstract Option */}
+                <div className="bg-stone-50 rounded-lg p-2.5 border border-stone-200/80 text-xs">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 font-medium text-stone-800 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={includeIntro}
+                        onChange={e => setIncludeIntro(e.target.checked)}
+                        className="rounded border-stone-300 text-amber-600 focus:ring-amber-500 w-4 h-4 cursor-pointer"
+                      />
+                      <span className="flex items-center gap-1.5">
+                        <FileCheck className="w-3.5 h-3.5 text-amber-600" />
+                        Kèm phần Giới thiệu ở đầu file
+                      </span>
+                    </label>
+                    {currentBook?.abstract && (() => {
+                      const paragraphs = getAbstractParagraphs(currentBook.abstract);
+                      if (paragraphs.length === 0) return null;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setShowIntroPreview(!showIntroPreview)}
+                          className="text-[11px] text-stone-500 hover:text-amber-700 font-medium flex items-center gap-0.5 cursor-pointer ml-2 shrink-0"
+                        >
+                          <span>{showIntroPreview ? "Ẩn giới thiệu" : "Xem giới thiệu"}</span>
+                          {showIntroPreview ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        </button>
+                      );
+                    })()}
+                  </div>
+
+                  {includeIntro && downloadMode === 'range' && (
+                    <p className="text-[11px] text-stone-500 mt-1 pl-6">
+                      ℹ️ Phần giới thiệu sẽ được chèn trước Chương {rangeStart} (định dạng rõ ràng, không dính dòng).
+                    </p>
+                  )}
+
+                  {/* Expandable Preview */}
+                  {showIntroPreview && currentBook?.abstract && (() => {
+                    const paragraphs = getAbstractParagraphs(currentBook.abstract);
+                    if (paragraphs.length === 0) return null;
+                    return (
+                      <div className="mt-2.5 pt-2 border-t border-stone-200/60 max-h-48 overflow-y-auto space-y-1.5 pr-1 text-[11px] text-stone-600">
+                        {paragraphs.map((para, idx) => (
+                          <p key={idx} className="indent-2 text-justify">{para}</p>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
 
                 {/* Format selection */}
                 <div className="flex items-center justify-between text-xs pt-1">
