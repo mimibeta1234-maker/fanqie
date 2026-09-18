@@ -12,6 +12,8 @@ interface ChapterListModalProps {
   markedItemIds?: Set<string>;
   onToggleMarkChapter?: (chapter: Chapter, chapterIndex: number) => void;
   initialShowMarkedOnly?: boolean;
+  onFetchChapterContent?: (chapter: Chapter, index: number) => Promise<{ title: string; content: string }>;
+  source?: 'fanqie' | 'qimao';
 }
 
 // Helper to convert an integer (1 - 9999) to standard Chinese numeral
@@ -48,7 +50,9 @@ export const ChapterListModal: React.FC<ChapterListModalProps> = ({
   onOpenPlotSearch,
   markedItemIds = new Set<string>(),
   onToggleMarkChapter,
-  initialShowMarkedOnly = false
+  initialShowMarkedOnly = false,
+  onFetchChapterContent,
+  source = 'fanqie'
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedVolume, setSelectedVolume] = useState<string>('all');
@@ -140,18 +144,49 @@ export const ChapterListModal: React.FC<ChapterListModalProps> = ({
   const handleQuickCopy = async (chapter: Chapter, index: number) => {
     try {
       setCopyingItemId(chapter.item_id);
-      const res = await fetch('/api/chapter/preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itemId: chapter.item_id })
-      });
-      const data = await res.json();
-      if (!data.success || !data.chapter) {
-        throw new Error(data.error || "Không thể tải nội dung chương");
+
+      let chapterTitle = chapter.title;
+      let chapterContent = "";
+
+      if (onFetchChapterContent) {
+        const result = await onFetchChapterContent(chapter, index);
+        chapterTitle = result.title || chapter.title;
+        chapterContent = result.content || "";
+      } else {
+        const res = await fetch('/api/chapter/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ itemId: chapter.item_id })
+        });
+        const data = await res.json();
+        if (!data.success || !data.chapter) {
+          throw new Error(data.error || "Không thể tải nội dung chương");
+        }
+        chapterTitle = data.chapter.title || chapter.title;
+        chapterContent = data.chapter.content || "";
       }
 
-      const textToCopy = `${chapter.title}\n\n${data.chapter.content}`;
-      await navigator.clipboard.writeText(textToCopy);
+      const textToCopy = `${chapterTitle}\n\n${chapterContent}`.trim();
+      
+      try {
+        if (navigator?.clipboard?.writeText) {
+          await navigator.clipboard.writeText(textToCopy);
+        } else {
+          throw new Error('Clipboard API not available');
+        }
+      } catch {
+        // Fallback for iframe or restricted permissions
+        const textArea = document.createElement("textarea");
+        textArea.value = textToCopy;
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        textArea.style.left = "-9999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
 
       setCopiedItemId(chapter.item_id);
       setTimeout(() => {

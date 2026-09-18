@@ -14,7 +14,20 @@ export function getSavedBooks(): SavedBook[] {
   }
 }
 
-export function saveBook(book: Book): SavedBook[] {
+export function inferBookSource(bookId: string, source?: string): 'fanqie' | 'qimao' {
+  if (source === 'qimao' || source === 'fanqie') {
+    return source;
+  }
+  const cleanId = String(bookId || '').trim();
+  // Fanqie IDs are 15-22 digits (commonly 19 digits)
+  if (/^\d{15,22}$/.test(cleanId)) {
+    return 'fanqie';
+  }
+  // Qimao IDs are shorter numbers (typically 5-10 digits) or contain alphanumeric ids
+  return 'qimao';
+}
+
+export function saveBook(book: Book, source: 'fanqie' | 'qimao' = 'fanqie'): SavedBook[] {
   try {
     const current = getSavedBooks();
     const existingIdx = current.findIndex(b => b.book_id === book.book_id);
@@ -28,7 +41,8 @@ export function saveBook(book: Book): SavedBook[] {
       category: book.category,
       tags: book.tags,
       chapter_count: book.chapter_count,
-      saved_at: Date.now()
+      saved_at: Date.now(),
+      source: source || inferBookSource(book.book_id)
     };
 
     let updated: SavedBook[];

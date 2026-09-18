@@ -52,6 +52,7 @@ export interface SavedBook {
   tags?: string;
   chapter_count?: number;
   saved_at: number;
+  source?: 'fanqie' | 'qimao';
 }
 
 export interface HdCoverData {

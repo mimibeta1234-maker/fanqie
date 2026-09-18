@@ -46,7 +46,17 @@ function parseQimaoBookId(input: string): string {
   return trimmed;
 }
 
-export const QimaoView: React.FC = () => {
+export interface QimaoViewProps {
+  initialBookId?: string | null;
+  onClearInitialBookId?: () => void;
+  onSavedBooksUpdate?: () => void;
+}
+
+export const QimaoView: React.FC<QimaoViewProps> = ({
+  initialBookId,
+  onClearInitialBookId,
+  onSavedBooksUpdate
+}) => {
   const [inputVal, setInputVal] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -101,14 +111,25 @@ export const QimaoView: React.FC = () => {
     };
   }, []);
 
+  // Handle initialBookId when opened from SavedBooksModal or navigation
+  useEffect(() => {
+    if (initialBookId) {
+      setInputVal(initialBookId);
+      handleFetchBook(initialBookId);
+      onClearInitialBookId?.();
+    }
+  }, [initialBookId]);
+
   const handleToggleSave = () => {
     if (!currentBook) return;
     if (isSaved) {
       removeSavedBook(currentBook.book_id);
       setIsSaved(false);
+      onSavedBooksUpdate?.();
     } else {
-      saveBook(currentBook);
+      saveBook(currentBook, 'qimao');
       setIsSaved(true);
+      onSavedBooksUpdate?.();
     }
   };
 
@@ -135,6 +156,7 @@ export const QimaoView: React.FC = () => {
 
         const book = data.book;
         setCurrentBook(book);
+        setIsSaved(isBookSaved(book.book_id));
 
         // Fetch catalog
         const catRes = await fetch(`/api/qimao/book/catalog?id=${encodeURIComponent(book.book_id)}`);
@@ -786,9 +808,32 @@ export const QimaoView: React.FC = () => {
           onClose={() => setIsCatalogOpen(false)}
           chapters={catalog.chapter_list}
           bookTitle={currentBook?.book_name || ""}
+          source="qimao"
           onPreviewChapter={(ch, idx) => {
             setIsCatalogOpen(false);
             handleOpenReader(ch.item_id, ch.title, idx || (ch as any).originalIndex);
+          }}
+          onFetchChapterContent={async (ch, idx) => {
+            const res = await fetch('/api/qimao/chapter/preview', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                bookId: currentBook?.book_id,
+                bookName: currentBook?.book_name,
+                author: currentBook?.author,
+                itemId: ch.item_id,
+                title: ch.title,
+                chapterIndex: idx || (ch as any).originalIndex || 1
+              })
+            });
+            const data = await res.json();
+            if (!data.success || !data.chapter) {
+              throw new Error(data.error || 'Không tải được nội dung chương Qimao');
+            }
+            return {
+              title: data.chapter.title || ch.title,
+              content: data.chapter.content || ''
+            };
           }}
         />
       )}

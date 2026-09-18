@@ -50,6 +50,7 @@ export default function App() {
   // Saved books state
   const [savedBooks, setSavedBooks] = useState<SavedBook[]>(() => getSavedBooks());
   const [isSavedBooksOpen, setIsSavedBooksOpen] = useState<boolean>(false);
+  const [qimaoTargetBookId, setQimaoTargetBookId] = useState<string | null>(null);
 
   // Chapter bookmarks state
   const [bookmarkedChapters, setBookmarkedChapters] = useState<ChapterBookmark[]>([]);
@@ -328,7 +329,7 @@ export default function App() {
       const updated = removeSavedBook(currentBook.book_id);
       setSavedBooks(updated);
     } else {
-      const updated = saveBook(currentBook);
+      const updated = saveBook(currentBook, 'fanqie');
       setSavedBooks(updated);
     }
   };
@@ -336,6 +337,16 @@ export default function App() {
   const handleRemoveSavedBook = (id: string) => {
     const updated = removeSavedBook(id);
     setSavedBooks(updated);
+  };
+
+  const handleSelectSavedBook = async (bookId: string, source: 'fanqie' | 'qimao') => {
+    if (source === 'qimao') {
+      setActiveTab('qimao');
+      setQimaoTargetBookId(bookId);
+    } else {
+      setActiveTab('downloader');
+      await handleLoadBook(bookId);
+    }
   };
 
   // If not authenticated, require password gate
@@ -412,7 +423,11 @@ export default function App() {
           </>
         ) : activeTab === 'qimao' ? (
           /* Qimao Downloader View */
-          <QimaoView />
+          <QimaoView
+            initialBookId={qimaoTargetBookId}
+            onClearInitialBookId={() => setQimaoTargetBookId(null)}
+            onSavedBooksUpdate={() => setSavedBooks(getSavedBooks())}
+          />
         ) : activeTab === 'zhihu' ? (
           /* Zhihu Downloader View */
           <ZhihuView />
@@ -453,7 +468,7 @@ export default function App() {
         isOpen={isSavedBooksOpen}
         onClose={() => setIsSavedBooksOpen(false)}
         savedBooks={savedBooks}
-        onSelectBook={handleLoadBook}
+        onSelectBook={handleSelectSavedBook}
         onRemoveBook={handleRemoveSavedBook}
       />
 
