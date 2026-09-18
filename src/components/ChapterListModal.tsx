@@ -166,7 +166,10 @@ export const ChapterListModal: React.FC<ChapterListModalProps> = ({
         chapterContent = data.chapter.content || "";
       }
 
-      const textToCopy = `${chapterTitle}\n\n${chapterContent}`.trim();
+      let textToCopy = chapterContent.trim();
+      if (!textToCopy.startsWith(chapterTitle) && !textToCopy.startsWith('=')) {
+        textToCopy = `${chapterTitle}\n\n${textToCopy}`;
+      }
       
       try {
         if (navigator?.clipboard?.writeText) {

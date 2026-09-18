@@ -31,7 +31,29 @@ export const ReaderModal: React.FC<ReaderModalProps> = ({
   if (!isOpen) return null;
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(`${title}\n\n${content}`);
+    let textToCopy = (content || '').trim();
+    if (!textToCopy.startsWith(title) && !textToCopy.startsWith('=')) {
+      textToCopy = `${title}\n\n${textToCopy}`;
+    }
+    try {
+      if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(textToCopy);
+      } else {
+        throw new Error('Clipboard API unavailable');
+      }
+    } catch {
+      const textArea = document.createElement("textarea");
+      textArea.value = textToCopy;
+      textArea.style.position = "fixed";
+      textArea.style.opacity = "0";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+        document.execCommand("copy");
+      } catch (e) {}
+      document.body.removeChild(textArea);
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

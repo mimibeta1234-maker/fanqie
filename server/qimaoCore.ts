@@ -1,5 +1,6 @@
 import https from 'https';
 import http from 'http';
+import zlib from 'zlib';
 import * as cheerio from 'cheerio';
 
 export function formatAbstract(raw: string | undefined | null): string {
@@ -85,7 +86,8 @@ export function qimaoFetch(urlStr: string, options: any = {}): Promise<{ ok: boo
         method: options.method || 'GET',
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'application/json, text/plain, */*',
+          'Accept': 'application/json, text/html, text/plain, */*',
+          'Accept-Encoding': 'gzip, deflate, br',
           'Referer': 'https://www.qimao.com/',
           ...(options.headers || {})
         },
@@ -96,7 +98,19 @@ export function qimaoFetch(urlStr: string, options: any = {}): Promise<{ ok: boo
         const chunks: Buffer[] = [];
         res.on('data', chunk => chunks.push(chunk));
         res.on('end', () => {
-          const buffer = Buffer.concat(chunks);
+          let buffer = Buffer.concat(chunks);
+          const encoding = res.headers['content-encoding'];
+          try {
+            if (encoding === 'gzip') {
+              buffer = zlib.gunzipSync(buffer);
+            } else if (encoding === 'deflate') {
+              buffer = zlib.inflateSync(buffer);
+            } else if (encoding === 'br') {
+              buffer = zlib.brotliDecompressSync(buffer);
+            }
+          } catch (decompressErr) {
+            // If decompression fails, use original buffer
+          }
           const text = buffer.toString('utf-8');
           resolve({
             ok: !!(res.statusCode && res.statusCode >= 200 && res.statusCode < 300),
@@ -599,12 +613,14 @@ export async function getQimaoCatalog(bookId: string): Promise<{ chapter_list: Q
 const zhBookIdCache = new Map<string, string>();
 const zhCatalogCache = new Map<string, Array<{ cid: string; title: string }>>();
 const quanbenSlugCache = new Map<string, string>();
-const mirrorBookCache = new Map<string, string>();
+const mirrorCatalogCache = new Map<string, Array<{ title: string; url: string }>>();
 
 function cleanParagraphs(rawParas: string[]): string[] {
   const junkPatterns = [
     /扫一扫[·\s]*手机接着看/i,
     /公交地铁随意阅读[，,\s]*新用户享超额福利/i,
+    /上纵横小说支持作者[，,\s]*看最新章节/i,
+    /纵横中文网/i,
     /手机接着看/i,
     /扫码继续阅读/i,
     /打开七猫免费小说/i,
@@ -656,6 +672,36 @@ function isContentTruncated(paras: string[]): boolean {
   }
   if (full.length < 1000 && (/……\s*$/.test(full) || /\.\.\.\s*$/.test(full))) {
     return true;
+  }
+
+  return false;
+}
+
+export function isMismatchedChapter(paras: string[], expectedChapNum: number, bookName?: string): boolean {
+  if (paras.length === 0) return false;
+  const firstFew = paras.slice(0, 5).join(' ');
+
+  // If requesting chapter > 1, reject any content that is actually chapter 1
+  if (expectedChapNum > 1) {
+    if (/^(?:第\s*1\s*章|第一章|第\s*01\s*章|Chương\s*1\b)/i.test(paras[0].trim())) {
+      return true;
+    }
+    // Specific opening signature of chapter 1 for 疯批殿下今天又服软了
+    if (firstFew.includes('谁在掐她脖子') && firstFew.includes('墨桑榆')) {
+      return true;
+    }
+    if (firstFew.includes('耳边传来一声阴冷怒喝') && firstFew.includes('墨桑榆')) {
+      return true;
+    }
+  }
+
+  // If content explicitly begins with a different chapter index
+  const m = firstFew.match(/^(?:第\s*(\d+)\s*章|Chapter\s*(\d+))/i);
+  if (m) {
+    const num = parseInt(m[1] || m[2], 10);
+    if (num > 0 && num !== expectedChapNum && Math.abs(num - expectedChapNum) > 0) {
+      return true;
+    }
   }
 
   return false;
@@ -815,9 +861,100 @@ async function fetchQuanbenChapter(slug: string, chapNum: number): Promise<{ tit
   }
 }
 
+async function getMirrorCatalog(cleanBook: string): Promise<Array<{ title: string; url: string }>> {
+  if (mirrorCatalogCache.has(cleanBook)) {
+    return mirrorCatalogCache.get(cleanBook)!;
+  }
+
+  try {
+    const queries = [
+      `${cleanBook} 第1章`,
+      `${cleanBook} 第10章`,
+      `${cleanBook} 章节目录`
+    ];
+
+    let catalogUrl = '';
+
+    for (const q of queries) {
+      const qUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
+      const res = await fetch(qUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'zh-CN,zh-Hans;q=0.9'
+        }
+      });
+      if (!res.ok) continue;
+      const html = await res.text();
+      const $ = cheerio.load(html);
+      
+      const candidateLinks: string[] = [];
+      $('a').each((_, el) => {
+        const rawHref = $(el).attr('href') || '';
+        let decoded = '';
+        if (rawHref.includes('uddg=')) {
+          const m = rawHref.match(/uddg=([^&]+)/);
+          if (m) decoded = decodeURIComponent(m[1]);
+        } else if (rawHref.startsWith('http://') || rawHref.startsWith('https://')) {
+          decoded = rawHref;
+        }
+        if (decoded && decoded.includes('51read.org')) {
+          candidateLinks.push(decoded);
+        }
+      });
+
+      for (const link of candidateLinks) {
+        const m51 = link.match(/51read\.org\/(?:xiaoshuo|zhangjiemulu)\/(\d+)/);
+        if (m51) {
+          catalogUrl = `https://m.51read.org/zhangjiemulu/${m51[1]}`;
+          break;
+        }
+      }
+      if (catalogUrl) break;
+    }
+
+    if (catalogUrl) {
+      const allChapters: Array<{ title: string; url: string }> = [];
+      // Fetch up to 10 catalog pages (up to 500 chapters)
+      for (let page = 1; page <= 10; page++) {
+        const pageUrl = page === 1 ? catalogUrl : `${catalogUrl}/${page}`;
+        const cRes = await fetch(pageUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+          }
+        });
+        if (!cRes.ok) break;
+        const cHtml = await cRes.text();
+        const $c = cheerio.load(cHtml);
+        let countThisPage = 0;
+        $c('a').each((_, aEl) => {
+          const href = $c(aEl).attr('href') || '';
+          const text = $c(aEl).text().trim();
+          if (href.includes('/zhangjie/')) {
+            const fullUrl = new URL(href, pageUrl).toString();
+            if (!allChapters.some(c => c.url === fullUrl)) {
+              allChapters.push({ title: text, url: fullUrl });
+              countThisPage++;
+            }
+          }
+        });
+        if (countThisPage === 0) break;
+      }
+
+      if (allChapters.length > 0) {
+        mirrorCatalogCache.set(cleanBook, allChapters);
+        return allChapters;
+      }
+    }
+  } catch (e) {}
+
+  return [];
+}
+
 async function fetchWebMirrorChapter(
   bookName: string,
   chapterTitle: string,
+  chapNum: number,
   author?: string
 ): Promise<{ title?: string; paras: string[] } | null> {
   if (!bookName || !chapterTitle) return null;
@@ -825,53 +962,119 @@ async function fetchWebMirrorChapter(
   const cleanBook = bookName.replace(/<[^>]+>/g, '').replace(/[，,！!？?：:].*$/, '').trim();
 
   try {
-    const cachedUrl = mirrorBookCache.get(cleanBook);
-    const candidateUrls: string[] = cachedUrl ? [cachedUrl] : [];
+    // Strategy 1: Check catalog cache
+    const catalog = await getMirrorCatalog(cleanBook);
+    if (catalog.length > 0) {
+      // Find matching chapter in catalog
+      let targetItem: { title: string; url: string } | undefined;
+      
+      // Match by exact or partial title
+      if (cleanT) {
+        targetItem = catalog.find(item => {
+          const itemClean = item.title.replace(/^(?:第\s*\d+\s*章|Chương\s*\d+)\s*[:：]?\s*/i, '').trim();
+          return itemClean === cleanT || itemClean.includes(cleanT) || cleanT.includes(itemClean);
+        });
+      }
+      
+      // Match by chapter number
+      if (!targetItem && chapNum > 0) {
+        targetItem = catalog.find(item => {
+          const m = item.title.match(/第\s*(\d+)\s*章/);
+          return m && parseInt(m[1], 10) === chapNum;
+        });
+      }
 
-    if (candidateUrls.length === 0) {
-      const query = `${cleanBook} ${author || ''} ${cleanT}`.trim();
+      // Match by index position
+      if (!targetItem && chapNum > 0 && chapNum <= catalog.length) {
+        targetItem = catalog[chapNum - 1];
+      }
+
+      if (targetItem && targetItem.url) {
+        const chapRes = await fetch(targetItem.url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+          }
+        });
+        if (chapRes.ok) {
+          const chapHtml = await chapRes.text();
+          const $chap = cheerio.load(chapHtml);
+          const paras: string[] = [];
+          $chap('#nr_content p, #articlecontent p, #content p, #chaptercontent p, #readcontent p, .content p, .reader-content p, .read-content p, #txt p, article p').each((_, pEl) => {
+            const t = $chap(pEl).text().trim();
+            if (t && t.length > 3) paras.push(t);
+          });
+          if (paras.length === 0) {
+            $chap('p').each((_, pEl) => {
+              const t = $chap(pEl).text().trim();
+              if (t && t.length > 5) paras.push(t);
+            });
+          }
+          const cleaned = cleanParagraphs(paras);
+          const isCatalogPage = cleaned.filter(p => /^第\s*\d+\s*章/i.test(p)).length > 5;
+          if (!isCatalogPage && cleaned.length >= 10 && !isMismatchedChapter(cleaned, chapNum, bookName)) {
+            return { title: cleanT || targetItem.title, paras: cleaned };
+          }
+        }
+      }
+    }
+
+    // Strategy 2: Multi-query search fallbacks
+    const candidateUrls: string[] = [];
+    const searchQueries = [
+      `${cleanBook} 第${chapNum}章`,
+      `${cleanBook} ${chapterTitle}`
+    ];
+
+    for (const query of searchQueries) {
       const qUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
       const res = await fetch(qUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'zh-CN,zh-Hans;q=0.9'
+        }
       });
       if (res.ok) {
         const html = await res.text();
         const $ = cheerio.load(html);
         $('a').each((_, el) => {
-          const href = $(el).attr('href') || '';
-          if (href.includes('uddg=')) {
-            const m = href.match(/uddg=([^&]+)/);
-            if (m) {
-              const decoded = decodeURIComponent(m[1]);
-              if (
-                !decoded.includes('qimao.com') &&
-                !decoded.includes('zongheng.com') &&
-                !decoded.includes('baidu.com') &&
-                !decoded.includes('zhihu.com') &&
-                !candidateUrls.includes(decoded)
-              ) {
-                candidateUrls.push(decoded);
-              }
+          const rawHref = $(el).attr('href') || '';
+          let decoded = '';
+          if (rawHref.includes('uddg=')) {
+            const m = rawHref.match(/uddg=([^&]+)/);
+            if (m) decoded = decodeURIComponent(m[1]);
+          } else if (rawHref.startsWith('http://') || rawHref.startsWith('https://')) {
+            decoded = rawHref;
+          }
+          if (decoded) {
+            if (
+              !decoded.includes('duckduckgo.com') &&
+              !decoded.includes('qimao.com') &&
+              !decoded.includes('zongheng.com') &&
+              !decoded.includes('baidu.com') &&
+              !decoded.includes('zhihu.com') &&
+              !candidateUrls.includes(decoded)
+            ) {
+              candidateUrls.push(decoded);
             }
           }
         });
       }
     }
 
-    for (const u of candidateUrls.slice(0, 4)) {
+    for (const u of candidateUrls.slice(0, 8)) {
       try {
-        const cRes = await fetch(u, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-        });
-        if (!cRes.ok) continue;
-        const cHtml = await cRes.text();
-        const $c = cheerio.load(cHtml);
+        let chapUrl = '';
+        const isLikelyCatalog = (u.includes('/book/') || u.includes('/novel/') || u.includes('/b/') || u.includes('/info/')) &&
+                                !u.match(/\/\d+\.html?$/) && !u.match(/_\d+\.html?$/) && !u.includes('/zhangjie/');
 
-        let chapUrl = u;
-        if (u.includes('/book/') || u.includes('/novel/') || u.includes('/b/')) {
-          if (!mirrorBookCache.has(cleanBook)) {
-            mirrorBookCache.set(cleanBook, u);
-          }
+        if (isLikelyCatalog) {
+          const cRes = await fetch(u, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+          });
+          if (!cRes.ok) continue;
+          const cHtml = await cRes.text();
+          const $c = cheerio.load(cHtml);
           $c('a').each((_, aEl) => {
             const aText = $c(aEl).text().trim();
             if (aText.includes(cleanT) || (cleanT.length > 3 && cleanT.slice(0, 4).split('').every(ch => aText.includes(ch)))) {
@@ -884,22 +1087,34 @@ async function fetchWebMirrorChapter(
               }
             }
           });
+        } else {
+          chapUrl = u;
         }
 
-        if (chapUrl !== u || !u.includes('/book/')) {
+        if (chapUrl) {
           const chapRes = await fetch(chapUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              'Referer': 'https://duckduckgo.com/'
+            }
           });
           if (chapRes.ok) {
             const chapHtml = await chapRes.text();
             const $chap = cheerio.load(chapHtml);
             const paras: string[] = [];
-            $chap('#nr_content p, #articlecontent p, #content p, #chaptercontent p, #readcontent p, .content p, .reader-content p').each((_, pEl) => {
+            $chap('#nr_content p, #articlecontent p, #content p, #chaptercontent p, #readcontent p, .content p, .reader-content p, .read-content p, #txt p, article p').each((_, pEl) => {
               const t = $chap(pEl).text().trim();
-              if (t && t.length > 5) paras.push(t);
+              if (t && t.length > 3) paras.push(t);
             });
+            if (paras.length === 0) {
+              $chap('p').each((_, pEl) => {
+                const t = $chap(pEl).text().trim();
+                if (t && t.length > 5) paras.push(t);
+              });
+            }
             const cleaned = cleanParagraphs(paras);
-            if (cleaned.length >= 10) {
+            const isCatalogPage = cleaned.filter(p => /^第\s*\d+\s*章/i.test(p)).length > 5;
+            if (!isCatalogPage && cleaned.length >= 10 && !isMismatchedChapter(cleaned, chapNum, bookName)) {
               return { title: cleanT, paras: cleaned };
             }
           }
@@ -910,6 +1125,39 @@ async function fetchWebMirrorChapter(
   return null;
 }
 
+function parseChineseNumber(str: string): number | null {
+  const digits: Record<string, number> = {
+    '零': 0, '一': 1, '二': 2, '两': 2, '三': 3, '四': 4,
+    '五': 5, '六': 6, '七': 7, '八': 8, '九': 9
+  };
+  const units: Record<string, number> = {
+    '十': 10, '百': 100, '千': 1000, '万': 10000
+  };
+  let total = 0;
+  let current = 0;
+  let hasMatch = false;
+
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i];
+    if (digits[char] !== undefined) {
+      current = digits[char];
+      hasMatch = true;
+    } else if (units[char] !== undefined) {
+      const u = units[char];
+      if (u === 10 && current === 0 && !hasMatch) {
+        current = 1;
+      }
+      total += (current || 1) * u;
+      current = 0;
+      hasMatch = true;
+    } else {
+      break;
+    }
+  }
+  total += current;
+  return hasMatch && total > 0 ? total : null;
+}
+
 function extractChapterNumber(title?: string, index?: number, fallbackId?: string): number {
   if (index && index > 0) return index;
   if (title) {
@@ -917,6 +1165,11 @@ function extractChapterNumber(title?: string, index?: number, fallbackId?: strin
     if (m) {
       const parsed = parseInt(m[1], 10);
       if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    const mZh = title.match(/第\s*([零一二两三四五六七八九十百千万]+)\s*章/);
+    if (mZh) {
+      const parsedZh = parseChineseNumber(mZh[1]);
+      if (parsedZh && parsedZh > 0) return parsedZh;
     }
   }
   if (fallbackId) {
@@ -949,7 +1202,7 @@ export async function getQimaoChapter(
   // 1. Try Qimao Desktop Reading Page
   try {
     const qUrl = `https://www.qimao.com/shuku/${cleanBookId}-${cleanChapId}/`;
-    const res = await qimaoFetch(qUrl, { timeout: 2500 });
+    const res = await qimaoFetch(qUrl, { timeout: 4500 });
 
     if (res.ok) {
       const html = await res.text();
@@ -957,13 +1210,13 @@ export async function getQimaoChapter(
       const pageTitle = $('.chapter-title').text().trim() || $('.title_txtbox').text().trim() || $('h1').first().text().trim();
       if (pageTitle && !fetchedTitle) fetchedTitle = pageTitle;
 
-      $('.chapter-content p, .article p, .reader-content p, .txt p, .content p').each((_, el) => {
+      $('.article p, .chapter-content p, .reader-content p, .txt p, .content p').each((_, el) => {
         const t = $(el).text().trim();
         if (t) paras.push(t);
       });
       paras = cleanParagraphs(paras);
     }
-  } catch (e) {}
+  } catch (e: any) {}
 
   // Check if Qimao returned 0 paragraphs OR truncated preview/teaser
   const needsRescue = isContentTruncated(paras);
@@ -992,7 +1245,7 @@ export async function getQimaoChapter(
     // Fallback B: Rescue via Web Novel Mirrors (xstime / wanshuku / xlink2 / etc.)
     if (paras.length === 0) {
       try {
-        const mirrorRes = await fetchWebMirrorChapter(bookName, chapterTitle || fetchedTitle, author);
+        const mirrorRes = await fetchWebMirrorChapter(bookName, chapterTitle || fetchedTitle, chapNum, author);
         if (mirrorRes && mirrorRes.paras.length > 0) {
           paras = mirrorRes.paras;
           if (mirrorRes.title && !fetchedTitle) fetchedTitle = mirrorRes.title;
@@ -1003,13 +1256,16 @@ export async function getQimaoChapter(
     }
 
     // Fallback C: Rescue via Zongheng Desktop / Mobile Reader with real chapter ID mapping
+    let teaserParas: string[] = [];
+    let matchedZhChap: { cid: string; title: string } | undefined;
+
     if (paras.length === 0) {
       try {
         const zhBookId = await getZonghengBookId(bookName);
         if (zhBookId) {
           const zhList = await getZonghengChapters(zhBookId);
           // Find chapter by index or title matching
-          let matchedZhChap = zhList[chapNum - 1];
+          matchedZhChap = zhList[chapNum - 1];
           if (!matchedZhChap && fetchedTitle) {
             const cleanT = fetchedTitle.replace(/^(?:第\s*\d+\s*章|Chương\s*\d+)\s*/i, '').trim();
             matchedZhChap = zhList.find(c => c.title.includes(cleanT) || cleanT.includes(c.title));
@@ -1030,16 +1286,19 @@ export async function getQimaoChapter(
               const dParas: string[] = [];
               $d('.content p, .reader-main p').each((_, el) => {
                 const t = $d(el).text().trim();
-                if (t && t.length > 5) dParas.push(t);
+                if (t && t.length > 3) dParas.push(t);
               });
               const cleanedD = cleanParagraphs(dParas);
-              if (!isContentTruncated(cleanedD)) {
-                paras = cleanedD;
-                if (!fetchedTitle) fetchedTitle = matchedZhChap.title;
+              if (cleanedD.length > 0 && !isMismatchedChapter(cleanedD, chapNum, bookName)) {
+                teaserParas = cleanedD;
+                if (!isContentTruncated(cleanedD)) {
+                  paras = cleanedD;
+                  if (!fetchedTitle) fetchedTitle = matchedZhChap.title;
+                }
               }
             }
 
-            // If desktop gave few paragraphs, try mobile
+            // If desktop gave few paragraphs, try mobile BUT strictly reject mismatch (Zongheng mobile redirects VIP chapters to chapter 1!)
             if (paras.length === 0) {
               const mUrl = `https://m.zongheng.com/chapter/${zhBookId}/${matchedZhChap.cid}.html`;
               const mRes = await fetch(mUrl, {
@@ -1054,11 +1313,12 @@ export async function getQimaoChapter(
                 const mParas: string[] = [];
                 $m('.content p, .reader p, #reader-content p, .chap-content p, p').each((_, el) => {
                   const t = $m(el).text().trim();
-                  if (t && t.length > 5) mParas.push(t);
+                  if (t && t.length > 3) mParas.push(t);
                 });
                 const cleanedM = cleanParagraphs(mParas);
-                if (!isContentTruncated(cleanedM)) {
+                if (!isMismatchedChapter(cleanedM, chapNum, bookName) && !isContentTruncated(cleanedM)) {
                   paras = cleanedM;
+                  if (!fetchedTitle) fetchedTitle = matchedZhChap.title;
                 }
               }
             }
@@ -1067,6 +1327,12 @@ export async function getQimaoChapter(
       } catch (e: any) {
         console.error("Zongheng chapter fetch error:", e.message);
       }
+    }
+
+    // If full text was not available on free web but genuine teaser preview for this exact chapter exists, use it!
+    if (paras.length === 0 && teaserParas.length > 0) {
+      paras = teaserParas;
+      if (!fetchedTitle && matchedZhChap?.title) fetchedTitle = matchedZhChap.title;
     }
   }
 
