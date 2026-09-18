@@ -312,12 +312,12 @@ async function startServer() {
 
   app.post("/api/qimao/chapter/preview", async (req, res) => {
     try {
-      const { bookId, itemId, title, bookName, chapterIndex } = req.body;
+      const { bookId, itemId, title, bookName, chapterIndex, author } = req.body;
       if (!itemId) {
         return res.status(400).json({ success: false, error: "Thiếu ID chương" });
       }
       const cleanBookId = parseQimaoBookId(bookId || "");
-      const chapter = await getQimaoChapter(cleanBookId, String(itemId), title, bookName, chapterIndex);
+      const chapter = await getQimaoChapter(cleanBookId, String(itemId), title, bookName, chapterIndex, author);
       res.json({
         success: true,
         chapter: {

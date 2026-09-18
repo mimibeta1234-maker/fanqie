@@ -115,7 +115,14 @@ class DownloadManager {
             batchSlice.map(async (ch) => {
               if (abortController.signal.aborted) return;
               try {
-                const res = await getQimaoChapter(task.bookId, ch.itemId, ch.title, task.bookInfo?.book_name, ch.index);
+                const res = await getQimaoChapter(
+                  task.bookId,
+                  ch.itemId,
+                  ch.title,
+                  task.bookInfo?.book_name,
+                  ch.index,
+                  task.bookInfo?.author
+                );
                 if (res && res.content) {
                   ch.content = res.content;
                   completed++;
