@@ -1443,12 +1443,44 @@ export function parseBookId(input) {
 }
 
 /**
+ * Decodes all HTML entities including decimal (&#34;), hex (&#x22;), and named entities (&quot;, &amp;, &lt;, &gt;, &apos;, &nbsp;)
+ */
+export function decodeHtmlEntities(str: string): string {
+  if (!str) return "";
+  return str
+    .replace(/&#(\d+);/g, (_, dec) => {
+      try {
+        const code = parseInt(dec, 10);
+        return !isNaN(code) ? String.fromCharCode(code) : _;
+      } catch (e) {
+        return _;
+      }
+    })
+    .replace(/&#x([0-9a-fA-F]+);/gi, (_, hex) => {
+      try {
+        const code = parseInt(hex, 16);
+        return !isNaN(code) ? String.fromCharCode(code) : _;
+      } catch (e) {
+        return _;
+      }
+    })
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;/gi, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&#34;/g, '"')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&');
+}
+
+/**
  * Normalizes and formats novel abstracts / synopses so paragraphs are cleanly separated
  * instead of sticking together into a single wall of text.
  */
 export function formatAbstract(raw: string | undefined | null): string {
   if (!raw) return "";
-  let s = String(raw);
+  let s = decodeHtmlEntities(String(raw));
 
   // 1. Convert HTML line breaks to newlines
   s = s.replace(/<br\s*\/?>/gi, '\n')
@@ -1482,28 +1514,29 @@ export function formatChapterText(htmlOrText, title) {
     const pMatches = text.match(/<p[^>]*>([\s\S]*?)<\/p>/gi);
     if (pMatches && pMatches.length > 0) {
       for (const p of pMatches) {
-        const cleanP = p
-          .replace(/<[^>]+>/g, '')
-          .replace(/&nbsp;/g, ' ')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&amp;/g, '&')
-          .replace(/^[\s\u3000\u00A0]+/, '')
-          .replace(/[\s\u3000\u00A0]+$/, '');
+        const cleanP = decodeHtmlEntities(
+          p
+            .replace(/<[^>]+>/g, '')
+            .replace(/^[\s\u3000\u00A0]+/, '')
+            .replace(/[\s\u3000\u00A0]+$/, '')
+        );
         if (cleanP) {
           paragraphs.push(cleanP);
         }
       }
       text = paragraphs.join('\n');
     } else {
-      text = text
-        .replace(/<[^>]+>/g, '')
+      text = decodeHtmlEntities(
+        text
+          .replace(/<[^>]+>/g, '')
+      )
         .split('\n')
         .map(l => l.replace(/^[\s\u3000\u00A0]+/, '').replace(/[\s\u3000\u00A0]+$/, ''))
         .filter(Boolean)
         .join('\n');
     }
   } else {
+    text = decodeHtmlEntities(text);
     const lines = text
       .split('\n')
       .map(l => l.replace(/^[\s\u3000\u00A0]+/, '').replace(/[\s\u3000\u00A0]+$/, ''))
@@ -1511,7 +1544,7 @@ export function formatChapterText(htmlOrText, title) {
     text = lines.join('\n');
   }
 
-  const cleanTitle = title ? String(title).replace(/^[\s\u3000\u00A0]+/, '').trim() : '';
+  const cleanTitle = title ? decodeHtmlEntities(String(title)).replace(/^[\s\u3000\u00A0]+/, '').trim() : '';
 
   if (cleanTitle) {
     return cleanTitle + "\n" + text;

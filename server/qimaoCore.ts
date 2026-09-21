@@ -2,10 +2,11 @@ import https from 'https';
 import http from 'http';
 import zlib from 'zlib';
 import * as cheerio from 'cheerio';
+import { decodeHtmlEntities } from './fanqieCore';
 
 export function formatAbstract(raw: string | undefined | null): string {
   if (!raw) return '';
-  let s = String(raw);
+  let s = decodeHtmlEntities(String(raw));
 
   // 1. Convert HTML line breaks to newlines
   s = s.replace(/<br\s*\/?>/gi, '\n')
@@ -642,7 +643,7 @@ function cleanParagraphs(rawParas: string[]): string[] {
   ];
 
   return rawParas
-    .map(p => p.trim())
+    .map(p => decodeHtmlEntities(p.trim()))
     .filter(p => {
       if (!p || p.length < 2) return false;
       return !junkPatterns.some(pat => pat.test(p));
