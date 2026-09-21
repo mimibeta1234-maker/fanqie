@@ -234,16 +234,22 @@ class DownloadManager {
     const cleanAbstract = formatAbstract(rawIntro);
 
     if (shouldIncludeIntro && cleanAbstract) {
-      headerLines.push(
-        '',
-        '========================================',
-        'GIỚI THIỆU',
-        '========================================',
-        cleanAbstract,
-        '========================================',
-        'NỘI DUNG',
-        '========================================'
-      );
+      const introParagraphs = cleanAbstract
+        .split('\n')
+        .map(l => l.replace(/^[\s\u3000\u00A0]+/, '').replace(/[\s\u3000\u00A0]+$/, ''))
+        .filter(l => l.length > 0);
+
+      if (introParagraphs.length > 0) {
+        headerLines.push(
+          '========================================',
+          'GIỚI THIỆU',
+          '========================================',
+          ...introParagraphs,
+          '========================================',
+          'NỘI DUNG',
+          '========================================'
+        );
+      }
     }
 
     const chapterBlocks: string[] = [];
