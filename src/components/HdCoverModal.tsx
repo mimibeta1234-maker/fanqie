@@ -89,15 +89,15 @@ export const HdCoverModal: React.FC<HdCoverModalProps> = ({
     if (!coverData) return '';
     switch (selectedQuality) {
       case 'original':
-        return coverData.originalUrl;
+        return coverData.originalUrl || coverData.rawUrl || '';
       case 'hd2k':
-        return coverData.hd2kUrl;
+        return coverData.hd2kUrl || coverData.originalUrl || coverData.rawUrl || '';
       case 'hd1200':
-        return coverData.hd1200Url;
+        return coverData.hd1200Url || coverData.originalUrl || coverData.rawUrl || '';
       case 'png':
-        return coverData.pngUrl;
+        return coverData.pngUrl || coverData.originalUrl || coverData.rawUrl || '';
       default:
-        return coverData.originalUrl;
+        return coverData.originalUrl || coverData.rawUrl || '';
     }
   };
 
@@ -370,6 +370,12 @@ export const HdCoverModal: React.FC<HdCoverModalProps> = ({
                     src={currentUrl}
                     alt={coverData.bookName || 'Bìa HD'}
                     referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      // If HD byteimg fails (e.g. signed CDN token required), fallback to raw URL if available
+                      if (coverData.rawUrl && e.currentTarget.src !== coverData.rawUrl) {
+                        e.currentTarget.src = coverData.rawUrl;
+                      }
+                    }}
                     style={{ transform: `scale(${zoomLevel})` }}
                     className="max-h-full object-contain shadow-2xl transition-transform duration-200 rounded-sm"
                   />

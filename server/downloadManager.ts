@@ -213,19 +213,19 @@ class DownloadManager {
     if (!task) throw new Error("Task not found");
 
     const info: any = task.bookInfo || {};
-    const totalCount = task.totalChapters || info.chapter_count || task.completedChapters || 0;
-    const tagVal = info.tags || info.category || "Tiểu thuyết";
+    const rawTag = info.tags || info.category || "";
+    let tagVal = rawTag;
+    if (tagVal && /[\u4e00-\u9fa5]/.test(tagVal)) {
+      tagVal = tagVal.split(/[,，、/]\s*/).filter(Boolean).join('，');
+    }
 
-    const headerLines = [
+    const allLines: string[] = [
       `Tên truyện: ${info.book_name || "Không rõ"}`,
       `Tác giả: ${info.author || "Không rõ"}`,
-      `Thể loại / Tag: ${tagVal}`,
     ];
 
-    if (task.selectedRange) {
-      headerLines.push(`Khoảng chương tải: Từ chương ${task.selectedRange.start} đến chương ${task.selectedRange.end} (${task.totalChapters} chương)`);
-    } else {
-      headerLines.push(`Số chương: ${totalCount}`);
+    if (tagVal) {
+      allLines.push(`Tag: ${tagVal}`);
     }
 
     // Include book description/intro if requested and available
@@ -234,41 +234,26 @@ class DownloadManager {
     const cleanAbstract = formatAbstract(rawIntro);
 
     if (shouldIncludeIntro && cleanAbstract) {
+      allLines.push('Giới thiệu:');
       const introParagraphs = cleanAbstract
         .split('\n')
         .map(l => l.replace(/^[\s\u3000\u00A0]+/, '').replace(/[\s\u3000\u00A0]+$/, ''))
-        .filter(l => l.length > 0);
+        .filter(l => l.length > 0 && !/^={3,}$/.test(l) && !/^-{3,}$/.test(l));
 
-      if (introParagraphs.length > 0) {
-        headerLines.push(
-          '========================================',
-          'GIỚI THIỆU',
-          '========================================',
-          ...introParagraphs,
-          '========================================',
-          'NỘI DUNG',
-          '========================================'
-        );
-      }
+      allLines.push(...introParagraphs);
     }
 
-    const chapterBlocks: string[] = [];
     for (const ch of task.chapters) {
       if (ch.content && ch.content.trim().length > 0) {
         const lines = ch.content
           .split('\n')
           .map(l => l.replace(/^[\s\u3000\u00A0]+/, '').replace(/[\s\u3000\u00A0]+$/, ''))
-          .filter(l => l.length > 0);
-        if (lines.length > 0) {
-          chapterBlocks.push(lines.join('\n'));
-        }
+          .filter(l => l.length > 0 && !/^={3,}$/.test(l) && !/^-{3,}$/.test(l));
+        allLines.push(...lines);
       }
     }
 
-    if (chapterBlocks.length > 0) {
-      return headerLines.join('\n') + '\n\n' + chapterBlocks.join('\n\n');
-    }
-    return headerLines.join('\n');
+    return allLines.join('\n');
   }
 
   async generateEpub(taskId: string): Promise<Buffer> {

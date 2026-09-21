@@ -1320,7 +1320,7 @@ function apiFetch(url, options = {}) {
       tagsSet.add(bookData.sub_category.trim());
     }
 
-    return Array.from(tagsSet).join(", ");
+    return Array.from(tagsSet).join("，");
   }
 
   async function getBookInfoRaw(bookId) {
@@ -1547,6 +1547,9 @@ export function formatChapterText(htmlOrText, title) {
   const cleanTitle = title ? decodeHtmlEntities(String(title)).replace(/^[\s\u3000\u00A0]+/, '').trim() : '';
 
   if (cleanTitle) {
+    if (text.startsWith(cleanTitle)) {
+      return text;
+    }
     return cleanTitle + "\n" + text;
   }
   return text;
@@ -1602,28 +1605,39 @@ export async function searchBooks(query, count = 10) {
   }
 }
 
-export function parseFanqieCoverFromUrl(rawUrl: string): { folder: string; hash: string } | null {
+export function parseFanqieCoverFromUrl(rawUrl: string): { folder: string; hash: string; rawUrl?: string } | null {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
-  const decoded = decodeURIComponent(rawUrl);
-  // Match folder like novel-pic, novel-images, tos-cn-i-*, novel-static
-  const match = decoded.match(/(novel-pic|novel-images|tos-cn-i-[a-z0-9_-]+|novel-static)\/([a-f0-9]{32})/i);
-  if (match) {
-    return { folder: match[1], hash: match[2].toLowerCase() };
+  const decoded = decodeURIComponent(rawUrl.trim());
+
+  // Extract query string if any (?w=1080&h=1440&...)
+  const qIdx = decoded.indexOf('?');
+  const cleanPath = qIdx !== -1 ? decoded.slice(0, qIdx) : decoded;
+
+  // 1. Match folder like novel-pic, novel-images, novel-static, tos-cn-i-* followed by hash or p2o...
+  const folderMatch = cleanPath.match(/(novel-pic|novel-images|novel-static|tos-cn-i-[a-z0-9_-]+)\/([a-z0-9_~.-]+)/i);
+  if (folderMatch) {
+    const rawHash = folderMatch[2].split('~')[0].split('.')[0];
+    if (rawHash.length >= 20 && rawHash.length <= 40) {
+      return { folder: folderMatch[1], hash: rawHash, rawUrl: decoded.startsWith('http') ? decoded : undefined };
+    }
   }
-  // Match standalone 32-hex hash
-  const hashMatch = decoded.match(/([a-f0-9]{32})/i);
+
+  // 2. Match standalone 32-character hexadecimal or p2o alphanumeric hash
+  const hashMatch = cleanPath.match(/\b([a-f0-9]{32}|p2o[a-z0-9]{29})\b/i);
   if (hashMatch) {
-    return { folder: 'novel-pic', hash: hashMatch[1].toLowerCase() };
+    return { folder: 'novel-pic', hash: hashMatch[1], rawUrl: decoded.startsWith('http') ? decoded : undefined };
   }
+
   return null;
 }
 
-export function buildHdCoverUrls(folder: string, hash: string) {
+export function buildHdCoverUrls(folder: string, hash: string, rawUrl?: string) {
   return {
     originalUrl: `https://p3-novel.byteimg.com/origin/${folder}/${hash}`,
     hd2kUrl: `https://p3-novel.byteimg.com/${folder}/${hash}~tplv-resize:1600:0.image`,
     hd1200Url: `https://p3-novel.byteimg.com/${folder}/${hash}~tplv-resize:1200:0.image`,
-    pngUrl: `https://p3-novel.byteimg.com/origin/${folder}/${hash}.png`
+    pngUrl: `https://p3-novel.byteimg.com/origin/${folder}/${hash}.png`,
+    rawUrl: rawUrl || undefined
   };
 }
 
@@ -1656,7 +1670,7 @@ export async function extractFanqieHdCover(input: string, bookNameHint?: string,
     throw new Error('Không tìm thấy mã băm ảnh bìa hợp lệ của Fanqie');
   }
 
-  const urls = buildHdCoverUrls(parsed.folder, parsed.hash);
+  const urls = buildHdCoverUrls(parsed.folder, parsed.hash, parsed.rawUrl);
 
   return {
     success: true,

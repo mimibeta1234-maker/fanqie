@@ -62,6 +62,7 @@ export interface HdCoverData {
   hd2kUrl: string;
   hd1200Url: string;
   pngUrl: string;
+  rawUrl?: string;
   bookName?: string;
   author?: string;
 }
