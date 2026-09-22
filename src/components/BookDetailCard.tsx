@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BookOpen, User, List, Bookmark, FileSearch, BookmarkCheck, ChevronDown, ChevronUp, Image as ImageIcon } from 'lucide-react';
+import { BookOpen, User, List, Bookmark, FileSearch, BookmarkCheck, ChevronDown, ChevronUp, Image as ImageIcon, FileText } from 'lucide-react';
 import { Book } from '../types';
 import { getAbstractParagraphs } from '../utils/textFormatter';
 import { HdCoverModal } from './HdCoverModal';
@@ -9,6 +9,7 @@ interface BookDetailCardProps {
   totalChapters: number;
   onOpenCatalog: () => void;
   onOpenPlotSearch?: () => void;
+  onOpenChapterTitles?: () => void;
   isSaved?: boolean;
   onToggleSave?: () => void;
   markedChaptersCount?: number;
@@ -20,6 +21,7 @@ export const BookDetailCard: React.FC<BookDetailCardProps> = ({
   totalChapters,
   onOpenCatalog,
   onOpenPlotSearch,
+  onOpenChapterTitles,
   isSaved = false,
   onToggleSave,
   markedChaptersCount = 0,
@@ -175,6 +177,19 @@ export const BookDetailCard: React.FC<BookDetailCardProps> = ({
               >
                 <FileSearch className="w-3.5 h-3.5" />
                 <span>Tìm theo tình tiết</span>
+              </button>
+            )}
+
+            {onOpenChapterTitles && (
+              <button
+                type="button"
+                onClick={onOpenChapterTitles}
+                className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-semibold transition-colors border border-rose-200 flex items-center gap-1.5 cursor-pointer"
+                id="btn-open-chapter-titles"
+                title="Trích xuất danh sách tiêu đề chương tuần tự (sạch theo từng dòng)"
+              >
+                <FileText className="w-3.5 h-3.5 text-rose-600" />
+                <span>Trích xuất tiêu đề</span>
               </button>
             )}
 

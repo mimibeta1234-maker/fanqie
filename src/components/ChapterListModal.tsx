@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { X, Search, BookOpen, ArrowUpDown, Copy, Check, Loader2, FileSearch, Bookmark } from 'lucide-react';
+import { X, Search, BookOpen, ArrowUpDown, Copy, Check, Loader2, FileSearch, Bookmark, FileText } from 'lucide-react';
 import { Chapter } from '../types';
 
 interface ChapterListModalProps {
@@ -9,6 +9,7 @@ interface ChapterListModalProps {
   bookTitle: string;
   onPreviewChapter: (chapter: Chapter, index?: number) => void;
   onOpenPlotSearch?: () => void;
+  onOpenChapterTitles?: () => void;
   markedItemIds?: Set<string>;
   onToggleMarkChapter?: (chapter: Chapter, chapterIndex: number) => void;
   initialShowMarkedOnly?: boolean;
@@ -48,6 +49,7 @@ export const ChapterListModal: React.FC<ChapterListModalProps> = ({
   bookTitle,
   onPreviewChapter,
   onOpenPlotSearch,
+  onOpenChapterTitles,
   markedItemIds = new Set<string>(),
   onToggleMarkChapter,
   initialShowMarkedOnly = false,
@@ -222,6 +224,20 @@ export const ChapterListModal: React.FC<ChapterListModalProps> = ({
             <p className="text-xs text-stone-500 truncate max-w-md">{bookTitle}</p>
           </div>
           <div className="flex items-center gap-2">
+            {onOpenChapterTitles && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenChapterTitles();
+                }}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-semibold border border-rose-200 transition-colors cursor-pointer"
+                title="Trích xuất danh sách tên chương tuần tự (dạng text sạch theo từng dòng)"
+                id="btn-catalog-extract-titles"
+              >
+                <FileText className="w-3.5 h-3.5 text-rose-600" />
+                <span>Trích xuất tiêu đề</span>
+              </button>
+            )}
             {onOpenPlotSearch && (
               <button
                 onClick={() => {

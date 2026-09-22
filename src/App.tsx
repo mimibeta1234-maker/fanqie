@@ -18,6 +18,7 @@ import { ChapterBookmark, getBookmarks, toggleChapterBookmark } from './utils/ch
 import { isUserAuthenticated, clearAuthentication } from './utils/auth';
 import { PasswordGate } from './components/PasswordGate';
 import { HdCoverModal } from './components/HdCoverModal';
+import { ChapterTitlesModal } from './components/ChapterTitlesModal';
 import { AlertTriangle } from 'lucide-react';
 
 export default function App() {
@@ -58,6 +59,9 @@ export default function App() {
 
   // Plot search state
   const [isPlotSearchOpen, setIsPlotSearchOpen] = useState<boolean>(false);
+
+  // Chapter Titles modal state
+  const [isChapterTitlesOpen, setIsChapterTitlesOpen] = useState<boolean>(false);
 
   // Modals state
   const [isCatalogOpen, setIsCatalogOpen] = useState<boolean>(false);
@@ -366,6 +370,7 @@ export default function App() {
           setIsAuthenticated(false);
         }}
         onOpenHdCoverModal={() => setIsGlobalHdCoverOpen(true)}
+        onOpenChapterTitlesModal={() => setIsChapterTitlesOpen(true)}
       />
 
       <main className={`flex-1 w-full mx-auto px-4 py-6 ${activeTab === 'compare' ? 'max-w-5xl' : 'max-w-2xl space-y-4'}`}>
@@ -401,6 +406,7 @@ export default function App() {
                     setIsCatalogOpen(true);
                   }}
                   onOpenPlotSearch={() => setIsPlotSearchOpen(true)}
+                  onOpenChapterTitles={() => setIsChapterTitlesOpen(true)}
                   isSaved={isCurrentBookSaved}
                   onToggleSave={handleToggleSaveBook}
                   markedChaptersCount={bookmarkedChapters.length}
@@ -448,6 +454,7 @@ export default function App() {
         bookTitle={currentBook?.book_name || ""}
         onPreviewChapter={handlePreviewChapter}
         onOpenPlotSearch={() => setIsPlotSearchOpen(true)}
+        onOpenChapterTitles={() => setIsChapterTitlesOpen(true)}
         markedItemIds={markedItemIds}
         onToggleMarkChapter={handleToggleMarkChapter}
         initialShowMarkedOnly={catalogInitialMarkedFilter}
@@ -501,6 +508,16 @@ export default function App() {
         initialCoverUrl={currentBook?.thumb_url}
         initialBookName={currentBook?.book_name}
         initialAuthor={currentBook?.author}
+      />
+
+      {/* Chapter Titles Extraction Modal */}
+      <ChapterTitlesModal
+        isOpen={isChapterTitlesOpen}
+        onClose={() => setIsChapterTitlesOpen(false)}
+        initialBookId={currentBook?.book_id}
+        initialBookTitle={currentBook?.book_name}
+        initialChapters={catalog?.chapter_list || []}
+        source="fanqie"
       />
     </div>
   );

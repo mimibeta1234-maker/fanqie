@@ -23,6 +23,7 @@ import { getAbstractParagraphs } from '../utils/textFormatter';
 import { ChapterListModal } from './ChapterListModal';
 import { ReaderModal } from './ReaderModal';
 import { SearchResultsModal } from './SearchResultsModal';
+import { ChapterTitlesModal } from './ChapterTitlesModal';
 
 const SUGGESTED_NOVELS = [
   { name: 'Kiếm Lai (剑来)', id: '672340' },
@@ -78,6 +79,7 @@ export const QimaoView: React.FC<QimaoViewProps> = ({
   // Modals
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isChapterTitlesOpen, setIsChapterTitlesOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<Book[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -527,6 +529,17 @@ export const QimaoView: React.FC<QimaoViewProps> = ({
                     <span>Mục lục ({totalChapters})</span>
                   </button>
 
+                  <button
+                    type="button"
+                    onClick={() => setIsChapterTitlesOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-300 bg-amber-50/80 hover:bg-amber-100 text-amber-900 text-xs font-semibold transition-colors cursor-pointer"
+                    id="btn-open-qimao-chapter-titles"
+                    title="Trích xuất danh sách tiêu đề chương tuần tự"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-amber-700" />
+                    <span>Trích xuất tiêu đề</span>
+                  </button>
+
                   {catalog && catalog.chapter_list.length > 0 && (
                     <button
                       type="button"
@@ -809,6 +822,7 @@ export const QimaoView: React.FC<QimaoViewProps> = ({
           chapters={catalog.chapter_list}
           bookTitle={currentBook?.book_name || ""}
           source="qimao"
+          onOpenChapterTitles={() => setIsChapterTitlesOpen(true)}
           onPreviewChapter={(ch, idx) => {
             setIsCatalogOpen(false);
             handleOpenReader(ch.item_id, ch.title, idx || (ch as any).originalIndex);
@@ -856,6 +870,16 @@ export const QimaoView: React.FC<QimaoViewProps> = ({
         results={searchResults}
         onSelectBook={handleSelectBook}
         query={searchQuery}
+      />
+
+      {/* Chapter Titles Modal */}
+      <ChapterTitlesModal
+        isOpen={isChapterTitlesOpen}
+        onClose={() => setIsChapterTitlesOpen(false)}
+        initialBookId={currentBook?.book_id}
+        initialBookTitle={currentBook?.book_name}
+        initialChapters={catalog?.chapter_list || []}
+        source="qimao"
       />
     </div>
   );

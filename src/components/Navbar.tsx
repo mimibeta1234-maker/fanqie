@@ -10,6 +10,7 @@ interface NavbarProps {
   savedCount?: number;
   onLogout?: () => void;
   onOpenHdCoverModal?: () => void;
+  onOpenChapterTitlesModal?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -18,7 +19,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSavedBooks,
   savedCount = 0,
   onLogout,
-  onOpenHdCoverModal
+  onOpenHdCoverModal,
+  onOpenChapterTitlesModal
 }) => {
   return (
     <header className="border-b border-stone-200 bg-white/90 backdrop-blur-md sticky top-0 z-30" id="main-header">
@@ -110,6 +112,18 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Right tools */}
         <div className="flex items-center gap-2">
+          {onOpenChapterTitlesModal && (
+            <button
+              onClick={onOpenChapterTitlesModal}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-colors cursor-pointer"
+              id="btn-nav-chapter-titles"
+              title="Trích xuất danh sách tiêu đề chương tuần tự"
+            >
+              <FileText className="w-3.5 h-3.5 text-rose-600" />
+              <span className="hidden sm:inline">Tiêu đề chương</span>
+            </button>
+          )}
+
           {onOpenHdCoverModal && (
             <button
               onClick={onOpenHdCoverModal}
