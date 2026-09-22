@@ -1605,45 +1605,93 @@ export async function searchBooks(query, count = 10) {
   }
 }
 
-export function parseFanqieCoverFromUrl(rawUrl: string): { folder: string; hash: string; rawUrl?: string } | null {
+export function parseFanqieCoverFromUrl(rawUrl: string): { folder: string; hash: string; rawUrl?: string; queryStr?: string; host?: string } | null {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
   const decoded = decodeURIComponent(rawUrl.trim());
 
-  // Extract query string if any (?w=1080&h=1440&...)
+  // Extract query string if any (?lk3s=...&x-expires=...&x-signature=... or ?w=1080&h=1440)
   const qIdx = decoded.indexOf('?');
+  const queryStr = qIdx !== -1 ? decoded.slice(qIdx) : '';
   const cleanPath = qIdx !== -1 ? decoded.slice(0, qIdx) : decoded;
 
-  // 1. Match folder like novel-pic, novel-images, novel-static, tos-cn-i-* followed by hash or p2o...
-  const folderMatch = cleanPath.match(/(novel-pic|novel-images|novel-static|tos-cn-i-[a-z0-9_-]+)\/([a-z0-9_~.-]+)/i);
+  let host = '';
+  try {
+    if (decoded.startsWith('http')) {
+      const u = new URL(decoded);
+      host = u.host;
+    }
+  } catch (e) {}
+
+  // 1. Match folder like novel-pic-r, novel-pic-d, novel-pic, novel-images, novel-static, novel-cover, tos-cn-i-* followed by hash
+  const folderMatch = cleanPath.match(/(novel-pic-r|novel-pic-d|novel-pic|novel-cover|novel-images|novel-static|tos-cn-i-[a-z0-9_-]+)\/([a-z0-9_~.-]+)/i);
   if (folderMatch) {
     const rawHash = folderMatch[2].split('~')[0].split('.')[0];
     if (rawHash.length >= 20 && rawHash.length <= 40) {
-      return { folder: folderMatch[1], hash: rawHash, rawUrl: decoded.startsWith('http') ? decoded : undefined };
+      return { folder: folderMatch[1], hash: rawHash, rawUrl: decoded.startsWith('http') ? decoded : undefined, queryStr, host };
     }
   }
 
   // 2. Match standalone 32-character hexadecimal or p2o alphanumeric hash
   const hashMatch = cleanPath.match(/\b([a-f0-9]{32}|p2o[a-z0-9]{29})\b/i);
   if (hashMatch) {
-    return { folder: 'novel-pic', hash: hashMatch[1], rawUrl: decoded.startsWith('http') ? decoded : undefined };
+    return { folder: 'novel-pic-r', hash: hashMatch[1], rawUrl: decoded.startsWith('http') ? decoded : undefined, queryStr, host };
+  }
+
+  // 3. For Qimao or other general image URLs
+  if (decoded.startsWith('http') && (decoded.includes('qimao') || decoded.match(/\.(jpg|jpeg|png|webp|image)/i))) {
+    return { folder: 'qimao', hash: 'direct', rawUrl: decoded, queryStr, host };
   }
 
   return null;
 }
 
-export function buildHdCoverUrls(folder: string, hash: string, rawUrl?: string) {
+export function buildHdCoverUrls(folder: string, hash: string, rawUrl?: string, queryStr?: string) {
+  const qs = queryStr ? (queryStr.startsWith('?') ? queryStr : `?${queryStr}`) : '';
+
+  // If this is a direct Qimao or external image URL
+  if (folder === 'qimao' && rawUrl) {
+    // Qimao high-res transforms (remove resizing filters if any)
+    const cleanQimao = rawUrl.split('?')[0];
+    return {
+      originalUrl: cleanQimao,
+      hd2kUrl: cleanQimao,
+      hd1200Url: cleanQimao,
+      pngUrl: cleanQimao,
+      rawUrl: rawUrl
+    };
+  }
+
+  // If rawUrl is a signed CDN URL (e.g. reading-sign.fqnovelpic.com with x-signature), modify the template path while preserving valid signature!
+  let signedOriginal = '';
+  let signed2k = '';
+  let signed1200 = '';
+
+  if (rawUrl && rawUrl.includes('reading-sign.fqnovelpic.com')) {
+    if (rawUrl.includes('~tplv-resize:')) {
+      signed2k = rawUrl.replace(/~tplv-resize:[^?]+/, '~tplv-resize:1600:0.image');
+      signed1200 = rawUrl.replace(/~tplv-resize:[^?]+/, '~tplv-resize:1200:0.image');
+      signedOriginal = rawUrl.replace(/~tplv-resize:[^?]+/, '~noop.image');
+    } else {
+      signed2k = rawUrl;
+      signed1200 = rawUrl;
+      signedOriginal = rawUrl;
+    }
+  }
+
+  const primaryHost = 'p3-novel.byteimg.com';
+
   return {
-    originalUrl: `https://p3-novel.byteimg.com/origin/${folder}/${hash}`,
-    hd2kUrl: `https://p3-novel.byteimg.com/${folder}/${hash}~tplv-resize:1600:0.image`,
-    hd1200Url: `https://p3-novel.byteimg.com/${folder}/${hash}~tplv-resize:1200:0.image`,
-    pngUrl: `https://p3-novel.byteimg.com/origin/${folder}/${hash}.png`,
+    originalUrl: signedOriginal || `https://${primaryHost}/${folder}/${hash}~noop.image${qs}`,
+    hd2kUrl: signed2k || `https://${primaryHost}/${folder}/${hash}~tplv-resize:1600:0.image${qs}`,
+    hd1200Url: signed1200 || `https://${primaryHost}/${folder}/${hash}~tplv-resize:1200:0.image${qs}`,
+    pngUrl: `https://${primaryHost}/origin/${folder}/${hash}.png${qs}`,
     rawUrl: rawUrl || undefined
   };
 }
 
 export async function extractFanqieHdCover(input: string, bookNameHint?: string, authorHint?: string) {
   if (!input || typeof input !== 'string') {
-    throw new Error('Vui lòng cung cấp link ảnh bìa, ID truyện hoặc link truyện Fanqie');
+    throw new Error('Vui lòng cung cấp link ảnh bìa, ID truyện hoặc link truyện');
   }
 
   const trimmed = input.trim();
@@ -1654,23 +1702,26 @@ export async function extractFanqieHdCover(input: string, bookNameHint?: string,
   let parsed = parseFanqieCoverFromUrl(trimmed);
 
   // Case 2: If input is a book ID or link to book page
-  if (!parsed) {
+  if (!parsed || parsed.hash === 'direct') {
     const bookId = parseBookId(trimmed);
     if (bookId) {
-      const info = await getBookInfo(bookId);
-      if (info && info.cover_url) {
-        parsed = parseFanqieCoverFromUrl(info.cover_url);
-        bookName = info.title || bookName;
-        author = info.author || author;
-      }
+      try {
+        const info = await getBookInfo(bookId);
+        if (info && info.cover_url) {
+          const p = parseFanqieCoverFromUrl(info.cover_url);
+          if (p) parsed = p;
+          bookName = info.title || bookName;
+          author = info.author || author;
+        }
+      } catch (e) {}
     }
   }
 
   if (!parsed) {
-    throw new Error('Không tìm thấy mã băm ảnh bìa hợp lệ của Fanqie');
+    throw new Error('Không tìm thấy mã băm ảnh bìa hợp lệ');
   }
 
-  const urls = buildHdCoverUrls(parsed.folder, parsed.hash, parsed.rawUrl);
+  const urls = buildHdCoverUrls(parsed.folder, parsed.hash, parsed.rawUrl, parsed.queryStr);
 
   return {
     success: true,

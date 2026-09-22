@@ -103,6 +103,11 @@ export const HdCoverModal: React.FC<HdCoverModalProps> = ({
 
   const currentUrl = getCurrentUrl();
 
+  const getProxyUrl = (targetUrl: string): string => {
+    if (!targetUrl) return '';
+    return `/api/book/cover/proxy?url=${encodeURIComponent(targetUrl)}&hash=${encodeURIComponent(coverData?.hash || '')}&folder=${encodeURIComponent(coverData?.folder || '')}`;
+  };
+
   const handleCopyLink = async () => {
     if (!currentUrl) return;
     try {
@@ -125,7 +130,7 @@ export const HdCoverModal: React.FC<HdCoverModalProps> = ({
       const ext = selectedQuality === 'png' ? 'png' : 'jpg';
       const filename = `Bia_${safeTitle}_${selectedQuality.toUpperCase()}.${ext}`;
 
-      const downloadUrl = `/api/book/cover/download?url=${encodeURIComponent(currentUrl)}&filename=${encodeURIComponent(filename)}`;
+      const downloadUrl = `/api/book/cover/download?url=${encodeURIComponent(currentUrl)}&hash=${encodeURIComponent(coverData?.hash || '')}&folder=${encodeURIComponent(coverData?.folder || '')}&filename=${encodeURIComponent(filename)}`;
       
       const link = document.createElement('a');
       link.href = downloadUrl;
@@ -367,12 +372,14 @@ export const HdCoverModal: React.FC<HdCoverModalProps> = ({
                   }`}
                 >
                   <img
-                    src={currentUrl}
+                    src={getProxyUrl(currentUrl)}
                     alt={coverData.bookName || 'Bìa HD'}
                     referrerPolicy="no-referrer"
                     onError={(e) => {
-                      // If HD byteimg fails (e.g. signed CDN token required), fallback to raw URL if available
-                      if (coverData.rawUrl && e.currentTarget.src !== coverData.rawUrl) {
+                      // If proxy fails, try direct currentUrl then rawUrl
+                      if (e.currentTarget.src.includes('/api/book/cover/proxy') && currentUrl) {
+                        e.currentTarget.src = currentUrl;
+                      } else if (coverData.rawUrl && e.currentTarget.src !== coverData.rawUrl) {
                         e.currentTarget.src = coverData.rawUrl;
                       }
                     }}
@@ -388,8 +395,8 @@ export const HdCoverModal: React.FC<HdCoverModalProps> = ({
                 <div className="space-y-0.5 leading-relaxed">
                   <p className="font-semibold">Đảm bảo độ phân giải gốc HD/2K:</p>
                   <p className="text-[11px] text-amber-800">
-                    Ảnh được trích xuất trực tiếp từ máy chủ lưu trữ gốc của ByteDance (`p3-novel.byteimg.com`), 
-                    loại bỏ hoàn toàn các bộ lọc nén thu nhỏ (~tplv-resize:225:300) của giao diện web/app để đạt độ nét tối đa.
+                    Ảnh được trích xuất trực tiếp từ máy chủ gốc của ByteDance & Qimao (`byteimg.com` / `fqnovelpic.com`), 
+                    loại bỏ hoàn toàn các bộ lọc nén thu nhỏ (~tplv-resize) của giao diện web/app để đạt độ nét tối đa.
                   </p>
                 </div>
               </div>
@@ -397,7 +404,7 @@ export const HdCoverModal: React.FC<HdCoverModalProps> = ({
           ) : (
             <div className="py-16 text-center text-stone-400 space-y-2">
               <ImageIcon className="w-12 h-12 mx-auto text-stone-300 stroke-1" />
-              <p className="text-xs">Nhập liên kết truyện hoặc ID sách Fanqie ở trên để bắt đầu trích xuất bìa HD.</p>
+              <p className="text-xs">Nhập liên kết truyện hoặc ID sách Fanqie / Qimao ở trên để bắt đầu trích xuất bìa HD.</p>
             </div>
           )}
         </div>
@@ -417,7 +424,7 @@ export const HdCoverModal: React.FC<HdCoverModalProps> = ({
               </button>
 
               <a
-                href={currentUrl}
+                href={getProxyUrl(currentUrl)}
                 target="_blank"
                 rel="noreferrer"
                 className="px-3 py-2 bg-white hover:bg-stone-100 text-stone-700 border border-stone-300 rounded-xl text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"

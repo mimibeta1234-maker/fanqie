@@ -139,35 +139,111 @@ async function startServer() {
     }
   });
 
+  // Helper to fetch novel cover image buffer across multiple CDNs & referers
+  async function fetchCoverBufferWithFallback(targetUrl: string, hash?: string, folder?: string): Promise<{ buffer: Buffer; contentType: string } | null> {
+    const candidateUrls: string[] = [targetUrl];
+    
+    if (hash && hash !== 'direct') {
+      const f = folder || 'novel-pic-r';
+      candidateUrls.push(
+        `https://p3-novel.byteimg.com/${f}/${hash}~tplv-resize:1600:0.image`,
+        `https://p6-novel.byteimg.com/${f}/${hash}~tplv-resize:1600:0.image`,
+        `https://p3-novel.byteimg.com/${f}/${hash}~noop.image`,
+        `https://p3-novel.byteimg.com/origin/${f}/${hash}`,
+        `https://p3-novel.byteimg.com/novel-pic-r/${hash}~tplv-resize:1600:0.image`,
+        `https://p3-novel.byteimg.com/novel-pic/${hash}~tplv-resize:1600:0.image`,
+        `https://p3-novel.byteimg.com/tos-cn-i-qvj2lq49zg/${hash}~tplv-resize:1600:0.image`,
+        `https://p3-novel.byteimg.com/novel-pic-r/${hash}~tplv-resize:225:300.image`
+      );
+    }
+
+    const uniqueCandidates = Array.from(new Set(candidateUrls.filter(Boolean)));
+    const referers = [
+      "https://fanqienovel.com/",
+      "https://www.qimao.com/",
+      "https://novel.snssdk.com/",
+      ""
+    ];
+
+    for (const url of uniqueCandidates) {
+      for (const referer of referers) {
+        try {
+          const headers: Record<string, string> = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+          };
+          if (referer) {
+            headers["Referer"] = referer;
+          }
+
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 6000);
+          const imgRes = await fetch(url, { headers, signal: controller.signal });
+          clearTimeout(timer);
+
+          if (imgRes.ok) {
+            const buf = Buffer.from(await imgRes.arrayBuffer());
+            if (buf.length > 500) {
+              const ct = imgRes.headers.get("content-type") || "image/jpeg";
+              return { buffer: buf, contentType: ct };
+            }
+          }
+        } catch (e) {}
+      }
+    }
+
+    return null;
+  }
+
+  // Cover image proxy (bypasses browser CORS & hotlink 403 blocks)
+  app.get("/api/book/cover/proxy", async (req, res) => {
+    try {
+      const targetUrl = String(req.query.url || "").trim();
+      const hash = String(req.query.hash || "").trim();
+      const folder = String(req.query.folder || "").trim();
+
+      if (!targetUrl && !hash) {
+        return res.status(400).send("Thiếu thông tin ảnh bìa");
+      }
+
+      const result = await fetchCoverBufferWithFallback(targetUrl, hash, folder);
+      if (!result) {
+        return res.status(404).send("Không thể tải ảnh bìa từ các máy chủ CDN");
+      }
+
+      res.setHeader("Content-Type", result.contentType);
+      res.setHeader("Content-Length", result.buffer.length);
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.send(result.buffer);
+    } catch (err: any) {
+      console.error("Cover proxy error:", err);
+      res.status(500).send("Lỗi tải ảnh");
+    }
+  });
+
   // Download HD cover proxy (handles CORS and enforces file download header)
   app.get("/api/book/cover/download", async (req, res) => {
     try {
       const targetUrl = String(req.query.url || "").trim();
       const filename = String(req.query.filename || "Bia_Truyen_HD.jpg").trim();
+      const hash = String(req.query.hash || "").trim();
+      const folder = String(req.query.folder || "").trim();
 
-      if (!targetUrl || !targetUrl.startsWith("http")) {
+      if (!targetUrl && !hash) {
         return res.status(400).json({ success: false, error: "Thiếu link ảnh hợp lệ" });
       }
 
-      const imgRes = await fetch(targetUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          "Referer": "https://fanqienovel.com/"
-        }
-      });
-
-      if (!imgRes.ok) {
-        return res.status(imgRes.status).json({ success: false, error: "Không thể tải ảnh từ máy chủ" });
+      const result = await fetchCoverBufferWithFallback(targetUrl, hash, folder);
+      if (!result) {
+        return res.status(500).json({ success: false, error: "Không thể tải ảnh từ máy chủ" });
       }
 
-      const contentType = imgRes.headers.get("content-type") || (filename.endsWith(".png") ? "image/png" : "image/jpeg");
-      const buffer = Buffer.from(await imgRes.arrayBuffer());
-
+      const contentType = result.contentType || (filename.endsWith(".png") ? "image/png" : "image/jpeg");
       res.setHeader("Content-Type", contentType);
       res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
-      res.setHeader("Content-Length", buffer.length);
+      res.setHeader("Content-Length", result.buffer.length);
       res.setHeader("Cache-Control", "public, max-age=86400");
-      res.send(buffer);
+      res.send(result.buffer);
     } catch (err: any) {
       console.error("Cover download proxy error:", err);
       res.status(500).json({ success: false, error: err.message || "Lỗi khi tải ảnh bìa" });
