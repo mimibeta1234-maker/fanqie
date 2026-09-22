@@ -410,7 +410,7 @@ async function startServer() {
 
   app.post("/api/qimao/download/start", async (req, res) => {
     try {
-      const { bookId, range, includeIntro } = req.body;
+      const { bookId, range, ranges, includeIntro } = req.body;
       if (!bookId) {
         return res.status(400).json({ success: false, error: "Thiếu ID truyện" });
       }
@@ -418,10 +418,11 @@ async function startServer() {
       const bookInfo = await getQimaoBookInfo(cleanId);
       const catalog = await getQimaoCatalog(cleanId);
 
-      const task = downloadManager.createTask(cleanId, bookInfo, catalog, range, 'qimao', includeIntro !== false);
+      const rangeParam = ranges && Array.isArray(ranges) && ranges.length > 0 ? ranges : range;
+      const task = downloadManager.createTask(cleanId, bookInfo, catalog, rangeParam, 'qimao', includeIntro !== false);
       downloadManager.runDownload(task.taskId);
 
-      res.json({ success: true, taskId: task.taskId, totalChapters: task.totalChapters });
+      res.json({ success: true, taskId: task.taskId, totalChapters: task.totalChapters, ranges: task.ranges });
     } catch (err: any) {
       console.error("Start Qimao download error:", err);
       res.status(500).json({ success: false, error: err.message || "Không thể khởi tạo tiến trình tải Qimao" });
@@ -431,7 +432,7 @@ async function startServer() {
   // Start download task
   app.post("/api/download/start", async (req, res) => {
     try {
-      const { bookId, range, includeIntro } = req.body;
+      const { bookId, range, ranges, includeIntro } = req.body;
       if (!bookId) {
         return res.status(400).json({ success: false, error: "Thiếu ID truyện" });
       }
@@ -451,11 +452,12 @@ async function startServer() {
         tags: bookData.tags || bookData.category || "Tiểu thuyết"
       };
 
-      const task = downloadManager.createTask(cleanId, bookInfo, catalog, range, 'fanqie', includeIntro !== false);
+      const rangeParam = ranges && Array.isArray(ranges) && ranges.length > 0 ? ranges : range;
+      const task = downloadManager.createTask(cleanId, bookInfo, catalog, rangeParam, 'fanqie', includeIntro !== false);
       // Run async in background
       downloadManager.runDownload(task.taskId);
 
-      res.json({ success: true, taskId: task.taskId, totalChapters: task.totalChapters });
+      res.json({ success: true, taskId: task.taskId, totalChapters: task.totalChapters, ranges: task.ranges });
     } catch (err: any) {
       console.error("Start download error:", err);
       res.status(500).json({ success: false, error: err.message || "Không thể khởi tạo tiến trình tải" });
@@ -482,7 +484,8 @@ async function startServer() {
         currentChapterTitle: task.currentChapterTitle,
         percent: task.percent,
         speed: task.speed,
-        errorMessage: task.errorMessage
+        errorMessage: task.errorMessage,
+        ranges: task.ranges
       }
     });
   });
@@ -495,11 +498,14 @@ async function startServer() {
     res.json({ success });
   });
 
-  // Export downloaded novel as TXT or EPUB
+  // Export downloaded novel as TXT, EPUB or ZIP
   app.get("/api/download/export", async (req, res) => {
     try {
       const taskId = String(req.query.taskId || "");
       const format = String(req.query.format || "txt").toLowerCase();
+      const rangeIndexStr = req.query.rangeIndex;
+      const rangeIndex = rangeIndexStr !== undefined && rangeIndexStr !== '' ? parseInt(String(rangeIndexStr)) : undefined;
+
       const task = downloadManager.getTask(taskId);
 
       if (!task) {
@@ -508,7 +514,15 @@ async function startServer() {
 
       const bookName = (task.bookInfo?.book_name || "novel").replace(/[^\w\s\u4e00-\u9fa5\u00C0-\u1EF9]/gi, '_');
 
-      if (format === "epub") {
+      if (format === "zip") {
+        const zipBuffer = await downloadManager.generateZip(taskId);
+        res.setHeader("Content-Type", "application/zip");
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="${encodeURIComponent(bookName)}_cac_khoang.zip"`
+        );
+        return res.send(zipBuffer);
+      } else if (format === "epub") {
         const epubBuffer = await downloadManager.generateEpub(taskId);
         res.setHeader("Content-Type", "application/epub+zip");
         res.setHeader(
@@ -517,11 +531,16 @@ async function startServer() {
         );
         return res.send(epubBuffer);
       } else {
-        const txtContent = downloadManager.generateTxt(taskId);
+        const txtContent = downloadManager.generateTxt(taskId, rangeIndex);
+        let filename = `${bookName}.txt`;
+        if (rangeIndex !== undefined && task.ranges && task.ranges[rangeIndex]) {
+          const r = task.ranges[rangeIndex];
+          filename = `${bookName}_[Chương_${r.start}-${r.end}].txt`;
+        }
         res.setHeader("Content-Type", "text/plain; charset=utf-8");
         res.setHeader(
           "Content-Disposition",
-          `attachment; filename="${encodeURIComponent(bookName)}.txt"`
+          `attachment; filename="${encodeURIComponent(filename)}"`
         );
         return res.send(txtContent);
       }

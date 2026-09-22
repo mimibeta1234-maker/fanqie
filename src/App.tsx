@@ -235,19 +235,29 @@ export default function App() {
   };
 
   // Start download task
-  const handleStartDownload = async (range?: { start: number; end: number }, includeIntro: boolean = true) => {
+  const handleStartDownload = async (
+    rangeOrRanges?: { start: number; end: number } | { start: number; end: number; label?: string }[],
+    includeIntro: boolean = true
+  ) => {
     if (!currentBook) return;
     setErrorMessage(null);
+
+    const isArray = Array.isArray(rangeOrRanges);
+    const payload: any = {
+      bookId: currentBook.book_id,
+      includeIntro
+    };
+    if (isArray) {
+      payload.ranges = rangeOrRanges;
+    } else if (rangeOrRanges) {
+      payload.range = rangeOrRanges;
+    }
 
     try {
       const res = await fetch('/api/download/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bookId: currentBook.book_id,
-          range,
-          includeIntro
-        })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (!data.success) {
@@ -264,7 +274,8 @@ export default function App() {
         failedChapters: 0,
         currentChapterTitle: 'Đang khởi tạo...',
         percent: 0,
-        speed: '0 chap/s'
+        speed: '0 chap/s',
+        ranges: data.ranges
       });
     } catch (err: any) {
       setErrorMessage(`Lỗi bắt đầu tải: ${err.message}`);
@@ -423,6 +434,8 @@ export default function App() {
                   onCancelDownload={handleCancelDownload}
                   bookName={currentBook.book_name}
                   abstract={currentBook.abstract}
+                  catalog={catalog}
+                  onResetTask={() => setDownloadTask(null)}
                 />
               </div>
             )}

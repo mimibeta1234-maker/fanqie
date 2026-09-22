@@ -24,6 +24,7 @@ import { ChapterListModal } from './ChapterListModal';
 import { ReaderModal } from './ReaderModal';
 import { SearchResultsModal } from './SearchResultsModal';
 import { ChapterTitlesModal } from './ChapterTitlesModal';
+import { DownloadPanel } from './DownloadPanel';
 
 const SUGGESTED_NOVELS = [
   { name: 'Kiếm Lai (剑来)', id: '672340' },
@@ -67,14 +68,6 @@ export const QimaoView: React.FC<QimaoViewProps> = ({
   const [downloadTask, setDownloadTask] = useState<DownloadTaskStatus | null>(null);
   const [isSaved, setIsSaved] = useState(false);
   const [showFullAbstract, setShowFullAbstract] = useState(false);
-
-  // Range & Format settings (similar to Fanqie DownloadPanel)
-  const [downloadMode, setDownloadMode] = useState<'all' | 'range'>('all');
-  const [rangeStart, setRangeStart] = useState<number>(1);
-  const [rangeEnd, setRangeEnd] = useState<number>(1);
-  const [exportFormat, setExportFormat] = useState<'txt' | 'epub'>('txt');
-  const [includeIntro, setIncludeIntro] = useState<boolean>(true);
-  const [showIntroPreview, setShowIntroPreview] = useState<boolean>(false);
 
   // Modals
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
@@ -178,8 +171,6 @@ export const QimaoView: React.FC<QimaoViewProps> = ({
           };
           setCatalog(fetchedCatalog);
           const totalChaps = fetchedCatalog.chapter_list.length;
-          setRangeStart(1);
-          setRangeEnd(totalChaps || 1);
           if (totalChaps > 0) {
             setCurrentBook(prev => prev ? { ...prev, chapter_count: totalChaps } : { ...book, chapter_count: totalChaps });
           }
@@ -263,27 +254,28 @@ export const QimaoView: React.FC<QimaoViewProps> = ({
     }
   };
 
-  const handleStartDownload = async () => {
+  const handleStartDownload = async (
+    rangeOrRanges?: { start: number; end: number } | { start: number; end: number; label?: string }[],
+    includeIntro: boolean = true
+  ) => {
     if (!currentBook || !catalog) return;
 
-    const totalChaps = catalog.chapter_list.length || currentBook.chapter_count || 1;
-    const range = downloadMode === 'all' 
-      ? { start: 1, end: totalChaps }
-      : { 
-          start: Math.max(1, Math.min(rangeStart, totalChaps)),
-          end: Math.max(rangeStart, Math.min(rangeEnd, totalChaps))
-        };
+    const isArray = Array.isArray(rangeOrRanges);
+    const payload: any = {
+      bookId: currentBook.book_id,
+      includeIntro
+    };
+    if (isArray) {
+      payload.ranges = rangeOrRanges;
+    } else if (rangeOrRanges) {
+      payload.range = rangeOrRanges;
+    }
 
     try {
       const res = await fetch('/api/qimao/download/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bookId: currentBook.book_id,
-          range,
-          includeIntro,
-          exportFormat
-        })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (!data.success) {
@@ -300,7 +292,8 @@ export const QimaoView: React.FC<QimaoViewProps> = ({
         failedChapters: 0,
         currentChapterTitle: 'Đang khởi tạo...',
         percent: 0,
-        speed: '0 chap/s'
+        speed: '0 chap/s',
+        ranges: data.ranges
       });
 
       // Start polling
@@ -578,239 +571,18 @@ export const QimaoView: React.FC<QimaoViewProps> = ({
             </div>
           </div>
 
-          {/* Download Panel - Exactly like Fanqie DownloadPanel */}
-          <div className="bg-white rounded-xl border border-stone-200 p-4 sm:p-5 shadow-xs" id="qimao-download-panel">
-            {/* Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
-              <h3 className="font-bold text-stone-900 text-sm sm:text-base flex items-center gap-2">
-                <Download className="w-4 h-4 text-amber-600" />
-                <span>Tải truyện về máy</span>
-              </h3>
-              {isDownloading && (
-                <span className="text-xs text-stone-500 font-mono">
-                  {downloadTask?.speed || "Đang tải..."}
-                </span>
-              )}
-            </div>
-
-            {/* Mode & Config (Hidden during downloading) */}
-            {!isDownloading && (
-              <div className="mt-4 space-y-3">
-                {/* Mode Selector */}
-                <div className="flex bg-stone-100 p-1 rounded-lg text-xs font-medium">
-                  <button
-                    type="button"
-                    onClick={() => setDownloadMode('all')}
-                    className={`flex-1 py-1.5 rounded-md transition-colors text-center cursor-pointer ${
-                      downloadMode === 'all'
-                        ? 'bg-white text-stone-900 shadow-xs font-semibold'
-                        : 'text-stone-500 hover:text-stone-800'
-                    }`}
-                  >
-                    Tải trọn bộ ({totalChapters} chương)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDownloadMode('range')}
-                    className={`flex-1 py-1.5 rounded-md transition-colors text-center cursor-pointer ${
-                      downloadMode === 'range'
-                        ? 'bg-white text-stone-900 shadow-xs font-semibold'
-                        : 'text-stone-500 hover:text-stone-800'
-                    }`}
-                  >
-                    Tùy chọn phạm vi
-                  </button>
-                </div>
-
-                {/* Range inputs if range mode */}
-                {downloadMode === 'range' && (
-                  <div className="flex items-center justify-between gap-3 p-3 bg-stone-50 rounded-lg border border-stone-200 text-xs">
-                    <span className="text-stone-600 font-medium">Phạm vi chương:</span>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min={1}
-                        max={totalChapters || 1}
-                        value={rangeStart}
-                        onChange={(e) => setRangeStart(Math.max(1, parseInt(e.target.value) || 1))}
-                        className="w-16 px-2 py-1 text-center bg-white border border-stone-300 rounded font-semibold text-stone-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                      />
-                      <span className="text-stone-400 font-bold">→</span>
-                      <input
-                        type="number"
-                        min={rangeStart}
-                        max={totalChapters || 1}
-                        value={rangeEnd}
-                        onChange={(e) => setRangeEnd(Math.min(totalChapters || 1, parseInt(e.target.value) || 1))}
-                        className="w-16 px-2 py-1 text-center bg-white border border-stone-300 rounded font-semibold text-stone-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Include Intro / Abstract Option */}
-                <div className="bg-stone-50 rounded-lg p-2.5 border border-stone-200/80 text-xs">
-                  <div className="flex items-center justify-between">
-                    <label className="flex items-center gap-2 font-medium text-stone-800 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={includeIntro}
-                        onChange={e => setIncludeIntro(e.target.checked)}
-                        className="rounded border-stone-300 text-amber-600 focus:ring-amber-500 w-4 h-4 cursor-pointer"
-                      />
-                      <span className="flex items-center gap-1.5">
-                        <FileCheck className="w-3.5 h-3.5 text-amber-600" />
-                        Kèm phần Giới thiệu ở đầu file
-                      </span>
-                    </label>
-                    {currentBook?.abstract && (() => {
-                      const paragraphs = getAbstractParagraphs(currentBook.abstract);
-                      if (paragraphs.length === 0) return null;
-                      return (
-                        <button
-                          type="button"
-                          onClick={() => setShowIntroPreview(!showIntroPreview)}
-                          className="text-[11px] text-stone-500 hover:text-amber-700 font-medium flex items-center gap-0.5 cursor-pointer ml-2 shrink-0"
-                        >
-                          <span>{showIntroPreview ? "Ẩn giới thiệu" : "Xem giới thiệu"}</span>
-                          {showIntroPreview ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                        </button>
-                      );
-                    })()}
-                  </div>
-
-                  {includeIntro && downloadMode === 'range' && (
-                    <p className="text-[11px] text-stone-500 mt-1 pl-6">
-                      ℹ️ Phần giới thiệu sẽ được chèn trước Chương {rangeStart} (định dạng rõ ràng, không dính dòng).
-                    </p>
-                  )}
-
-                  {/* Expandable Preview */}
-                  {showIntroPreview && currentBook?.abstract && (() => {
-                    const paragraphs = getAbstractParagraphs(currentBook.abstract);
-                    if (paragraphs.length === 0) return null;
-                    return (
-                      <div className="mt-2.5 pt-2 border-t border-stone-200/60 max-h-48 overflow-y-auto space-y-1.5 pr-1 text-[11px] text-stone-600">
-                        {paragraphs.map((para, idx) => (
-                          <p key={idx} className="indent-2 text-justify">{para}</p>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                {/* Format selection */}
-                <div className="flex items-center justify-between text-xs pt-1">
-                  <span className="text-stone-600 font-medium">Định dạng file:</span>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setExportFormat('txt')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-all cursor-pointer font-semibold ${
-                        exportFormat === 'txt'
-                          ? 'bg-amber-50 border-amber-300 text-amber-900 shadow-2xs'
-                          : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
-                      }`}
-                    >
-                      <FileText className="w-3.5 h-3.5 text-amber-600" />
-                      <span>TXT (Gộp 1 file)</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setExportFormat('epub')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-all cursor-pointer font-semibold ${
-                        exportFormat === 'epub'
-                          ? 'bg-amber-50 border-amber-300 text-amber-900 shadow-2xs'
-                          : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
-                      }`}
-                    >
-                      <BookMarked className="w-3.5 h-3.5 text-amber-600" />
-                      <span>EPUB</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Start Download Button */}
-                <button
-                  type="button"
-                  onClick={handleStartDownload}
-                  className="w-full mt-2 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold text-sm rounded-lg shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
-                  id="btn-start-qimao-download"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>
-                    Bắt đầu tải {downloadMode === 'all' ? `${totalChapters} chương` : `${rangeEnd - rangeStart + 1} chương`}
-                  </span>
-                </button>
-              </div>
-            )}
-
-            {/* Progress / Status during or after download */}
-            {downloadTask && (
-              <div className="mt-4 p-4 bg-stone-50 rounded-lg border border-stone-200 space-y-3">
-                <div className="flex items-center justify-between text-xs font-semibold">
-                  <div className="flex items-center gap-2">
-                    {isDownloading && <RefreshCw className="w-3.5 h-3.5 text-amber-600 animate-spin" />}
-                    {downloadTask.status === 'completed' && <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />}
-                    <span className="text-stone-800">
-                      {isDownloading && (downloadTask.currentChapterTitle || 'Đang tải chương...')}
-                      {downloadTask.status === 'completed' && 'Tải hoàn tất 100%!'}
-                      {downloadTask.status === 'cancelled' && 'Đã hủy tải'}
-                      {downloadTask.status === 'error' && 'Lỗi trong quá trình tải'}
-                    </span>
-                  </div>
-                  <span className="text-amber-700 font-bold">{downloadTask.percent}%</span>
-                </div>
-
-                {/* Progress bar */}
-                <div className="w-full h-2 bg-stone-200 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-amber-600 transition-all duration-200"
-                    style={{ width: `${downloadTask.percent}%` }}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between text-[11px] text-stone-500">
-                  <span>
-                    Tiến độ: <strong className="text-stone-800">{downloadTask.completedChapters}</strong> / {downloadTask.totalChapters} chương
-                  </span>
-                  {downloadTask.speed && <span>{downloadTask.speed}</span>}
-                </div>
-
-                {/* Actions: Cancel or Export */}
-                <div className="pt-2 border-t border-stone-200 flex items-center justify-between">
-                  {isDownloading ? (
-                    <button
-                      type="button"
-                      onClick={handleCancelDownload}
-                      className="text-xs text-red-600 hover:text-red-700 font-semibold cursor-pointer"
-                    >
-                      Hủy tải
-                    </button>
-                  ) : downloadTask.status === 'completed' ? (
-                    <div className="flex items-center gap-2 w-full">
-                      <a
-                        href={`/api/download/export?taskId=${downloadTask.taskId}&format=txt`}
-                        download
-                        className="flex-1 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold text-center flex items-center justify-center gap-1.5 transition-colors"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>Lưu file TXT</span>
-                      </a>
-                      <a
-                        href={`/api/download/export?taskId=${downloadTask.taskId}&format=epub`}
-                        download
-                        className="flex-1 py-2 bg-stone-800 hover:bg-stone-900 text-white rounded-lg text-xs font-semibold text-center flex items-center justify-center gap-1.5 transition-colors"
-                      >
-                        <BookMarked className="w-3.5 h-3.5" />
-                        <span>Lưu file EPUB</span>
-                      </a>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            )}
-          </div>
+          {/* Download Panel */}
+          <DownloadPanel
+            task={downloadTask}
+            totalChapters={totalChapters}
+            onStartDownload={handleStartDownload}
+            onCancelDownload={handleCancelDownload}
+            bookName={currentBook.book_name}
+            abstract={currentBook.abstract}
+            catalog={catalog}
+            themeColor="amber"
+            onResetTask={() => setDownloadTask(null)}
+          />
         </div>
       )}
 

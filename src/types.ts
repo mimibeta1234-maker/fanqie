@@ -21,6 +21,13 @@ export interface Chapter {
   char_count: number;
 }
 
+export interface ChapterRange {
+  start: number;
+  end: number;
+  label?: string;
+  count?: number;
+}
+
 export interface Catalog {
   book_id: string;
   chapter_list: Chapter[];
@@ -40,6 +47,7 @@ export interface DownloadTaskStatus {
   percent: number;
   speed: string;
   errorMessage?: string;
+  ranges?: ChapterRange[];
 }
 
 export interface SavedBook {
