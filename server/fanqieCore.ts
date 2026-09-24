@@ -1031,7 +1031,8 @@ function apiFetch(url, options = {}) {
       console.warn("Failed to get chapter: ", itemId, ", response: ", res.responseText);
       return await getChapter(itemId, _retry + 1);
     }
-    if ((j == null ? void 0 : j.content) === "Invalid" || (j == null ? void 0 : j.key_version) !== ((_b = _config.currentConfig.key_info) == null ? void 0 : _b.keyver)) {
+    const localKeyver = (_b = _config.currentConfig.key_info) == null ? void 0 : _b.keyver;
+    if ((j == null ? void 0 : j.content) === "Invalid" || (j?.key_version !== void 0 && Number(j.key_version) !== localKeyver)) {
       console.warn("Key reg expired, regster again and retrying...");
       if ((j == null ? void 0 : j.content) === "Invalid") {
         await refreshKey();

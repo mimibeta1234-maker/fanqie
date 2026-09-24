@@ -1,5 +1,5 @@
 import { getBookInfo, getCatalog, getChapters, getChapter, formatChapterText, parseBookId, formatAbstract, parseFanqieCoverFromUrl } from './fanqieCore';
-import { getQimaoChapter } from './qimaoCore';
+import { getQimaoChapter, ensureMirrorCatalog } from './qimaoCore';
 import { generateEpub } from './epubGenerator';
 import JSZip from 'jszip';
 
@@ -170,6 +170,13 @@ class DownloadManager {
 
     // Cache content by itemId so identical chapters across overlapping ranges don't re-fetch
     const contentCache = new Map<string, string>();
+
+    // Pre-warm catalog/cross-source mapping for Qimao books so batches resolve instantly
+    if (isQimao && task.bookInfo?.book_name) {
+      try {
+        await ensureMirrorCatalog(task.bookInfo.book_name, task.bookInfo?.author);
+      } catch (e) {}
+    }
 
     try {
       for (let i = 0; i < total; i += BATCH_SIZE) {
