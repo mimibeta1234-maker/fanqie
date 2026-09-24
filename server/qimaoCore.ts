@@ -648,7 +648,10 @@ function cleanParagraphs(rawParas: string[]): string[] {
     /投推荐票/i,
     /上一章/i,
     /下一章/i,
+    /上一页/i,
+    /下一页/i,
     /返回目录/i,
+    /返回书页/i,
     /章节错误/i,
     /点此举报/i,
     /精武小说网/i,
@@ -657,21 +660,33 @@ function cleanParagraphs(rawParas: string[]): string[] {
     /请收藏本站/i,
     /章节报错/i,
     /文学.*首.*发/i,
-    /首发.*更新/i
+    /首发.*更新/i,
+    /请记住本书首发域名/i,
+    /顶点小说/i,
+    /69书吧/i,
+    /飘天文学/i
   ];
 
   const inlineWatermarkRegex = /(?:[\?？]{2,}[^\s\u4e00-\u9fa5]*[\u4e00-\u9fa5]*[^\s\u4e00-\u9fa5]*[\?？&|=¨±\$]+|[\u4e00-\u9fa5]*文学[^\s\u4e00-\u9fa5]*首[^\s\u4e00-\u9fa5]*发[^\s\u4e00-\u9fa5]*)/g;
 
-  return rawParas
+  const cleaned = rawParas
     .map(p => {
-      let cleaned = decodeHtmlEntities(p.trim());
-      cleaned = cleaned.replace(inlineWatermarkRegex, '').trim();
-      return cleaned;
+      let c = decodeHtmlEntities(p.trim());
+      c = c.replace(inlineWatermarkRegex, '').trim();
+      return c;
     })
     .filter(p => {
       if (!p || p.length < 2) return false;
       return !junkPatterns.some(pat => pat.test(p));
     });
+
+  // Deduplicate consecutive identical paragraphs
+  const deduped: string[] = [];
+  for (const p of cleaned) {
+    if (deduped.length > 0 && deduped[deduped.length - 1] === p) continue;
+    deduped.push(p);
+  }
+  return deduped;
 }
 
 function isContentTruncated(paras: string[]): boolean {
@@ -704,21 +719,35 @@ export function isMismatchedChapter(
   paras: string[],
   expectedChapNum: number,
   expectedTitle?: string,
-  bookName?: string
+  bookName?: string,
+  pageTitle?: string
 ): boolean {
-  if (paras.length === 0) return false;
+  if (paras.length === 0) return true;
   const firstFew = paras.slice(0, 3).join(' ');
 
-  // If chapter title is provided, check for title match first
-  if (expectedTitle) {
-    const cleanT = expectedTitle.replace(/^(?:第\s*\d+\s*章|Chương\s*\d+)\s*[:：]?\s*/i, '').trim();
-    if (cleanT.length >= 2 && firstFew.includes(cleanT)) {
-      return false;
+  // 1. If pageTitle is available, check chapter number in pageTitle
+  if (pageTitle && expectedChapNum > 0) {
+    const pageM = pageTitle.match(/第\s*(\d+)\s*章/);
+    if (pageM) {
+      const pNum = parseInt(pageM[1], 10);
+      if (pNum > 0 && pNum !== expectedChapNum) {
+        return true;
+      }
     }
   }
 
-  // If requesting chapter > 2, reject content that is explicitly Chapter 1
-  if (expectedChapNum > 2) {
+  // 2. If chapter title is provided, check for title match
+  if (expectedTitle) {
+    const cleanT = expectedTitle.replace(/^(?:第\s*\d+\s*章|Chương\s*\d+)\s*[:：]?\s*/i, '').trim();
+    if (cleanT.length >= 2) {
+      if ((pageTitle && pageTitle.includes(cleanT)) || firstFew.includes(cleanT)) {
+        return false;
+      }
+    }
+  }
+
+  // 3. Reject if requesting chapNum > 1 but content is explicitly Chapter 1
+  if (expectedChapNum > 1) {
     if (/^(?:第\s*1\s*章|第一章|第\s*01\s*章|Chương\s*1\b)/i.test(paras[0].trim())) {
       return true;
     }
@@ -730,13 +759,68 @@ export function isMismatchedChapter(
     }
   }
 
-  // If content explicitly begins with a significantly different chapter number (> 3 difference and no title overlap)
+  // 4. If content explicitly begins with a different chapter number
   const m = firstFew.match(/^(?:第\s*(\d+)\s*章|Chapter\s*(\d+))/i);
   if (m) {
     const num = parseInt(m[1] || m[2], 10);
-    if (num > 0 && Math.abs(num - expectedChapNum) > 3) {
+    if (num > 0 && num !== expectedChapNum) {
       return true;
     }
+  }
+
+  return false;
+}
+
+/**
+ * Helper to determine if a link is truly a subpage of the current chapter
+ * (e.g. 21_2.html, 21-2.html, 21.html?page=2), preventing next-chapter concatenation
+ */
+export function isRealSubpage(currentUrlStr: string, nextHref: string, linkText: string): boolean {
+  if (!nextHref || nextHref.includes('javascript') || nextHref.startsWith('#')) return false;
+
+  // If link text explicitly says "下一章" (Next Chapter) or "下章", reject immediately!
+  if (/下\s*一?\s*章/i.test(linkText)) return false;
+
+  let currentUrl: URL, nextUrl: URL;
+  try {
+    currentUrl = new URL(currentUrlStr);
+    nextUrl = new URL(nextHref, currentUrl);
+  } catch (e) {
+    return false;
+  }
+
+  if (currentUrl.origin !== nextUrl.origin) return false;
+
+  const curPath = currentUrl.pathname;
+  const nextPath = nextUrl.pathname;
+
+  // Case 1: Same path with query parameter page=2, p=2, index=2
+  if (curPath === nextPath && (nextUrl.searchParams.has('page') || nextUrl.searchParams.has('p') || nextUrl.searchParams.has('index'))) {
+    return true;
+  }
+
+  const curMatch = curPath.match(/\/([^\/]+?)(\.[a-zA-Z0-9]+)?$/);
+  const nextMatch = nextPath.match(/\/([^\/]+?)(\.[a-zA-Z0-9]+)?$/);
+  if (!curMatch || !nextMatch) return false;
+
+  const curBase = curMatch[1];
+  const nextBase = nextMatch[1];
+
+  // If nextBase is strictly identical, it's not a new page
+  if (curBase === nextBase && currentUrl.search === nextUrl.search) return false;
+
+  const cleanCurBase = curBase.replace(/[_-]\d+$/, '');
+  const subpageRegex = new RegExp('^' + cleanCurBase + '[_-]\\d+$');
+
+  // Case 2: Base filename matches with suffix like _2 or -2
+  if (subpageRegex.test(nextBase)) {
+    return true;
+  }
+
+  // Case 3: Link text explicitly has pagination indicator (e.g. 1/2, 2/3) in same directory
+  const hasPageIndicator = /[(（]\s*\d+\s*[\/／]\s*\d+\s*[)）]|第\s*\d+\s*页/.test(linkText);
+  if (hasPageIndicator && curPath.substring(0, curPath.lastIndexOf('/')) === nextPath.substring(0, nextPath.lastIndexOf('/'))) {
+    return subpageRegex.test(nextBase);
   }
 
   return false;
@@ -839,20 +923,15 @@ async function extractParagraphsFromHtml(
 
   paras = cleanParagraphs(paras);
 
-  // Check for multi-page continuation (e.g. 1/2, 1/3)
+  // Check for multi-page continuation ONLY if verified as true subpage of the same chapter
   if (depth < 2 && pageUrl) {
     let nextPageRelative = '';
     $('a').each((_, a) => {
       const aText = $(a).text().trim();
       const aHref = $(a).attr('href');
-      if (
-        aHref &&
-        (aText.includes('下一页') || aText.includes('下页') || aText.includes('下一页(1/2)') || aText.includes('下一页（1/2）'))
-      ) {
-        if (!aHref.includes('javascript') && !aHref.startsWith('#')) {
-          nextPageRelative = aHref;
-          return false;
-        }
+      if (aHref && isRealSubpage(pageUrl, aHref, aText)) {
+        nextPageRelative = aHref;
+        return false;
       }
     });
 
@@ -862,8 +941,19 @@ async function extractParagraphsFromHtml(
         if (nextUrl !== pageUrl) {
           const nextHtml = await fetchPageSmart(nextUrl, 4000);
           const nextRes = await extractParagraphsFromHtml(nextHtml, nextUrl, depth + 1);
-          if (nextRes.paras.length > 0) {
-            paras = paras.concat(nextRes.paras);
+
+          // Verify next page does not belong to a different chapter
+          let isSameChapter = true;
+          if (title && nextRes.title) {
+            const m1 = title.match(/第\s*(\d+)\s*章/);
+            const m2 = nextRes.title.match(/第\s*(\d+)\s*章/);
+            if (m1 && m2 && m1[1] !== m2[1]) {
+              isSameChapter = false;
+            }
+          }
+
+          if (isSameChapter && nextRes.paras.length > 0) {
+            paras = cleanParagraphs(paras.concat(nextRes.paras));
           }
         }
       } catch (e) {}
@@ -949,15 +1039,85 @@ export async function getZonghengChapters(zhBookId: string): Promise<Array<{ cid
   return [];
 }
 
+export function getCleanSearchCandidates(bookName: string): string[] {
+  const raw = (bookName || '').replace(/<[^>]+>/g, '').replace(/^[《<]/, '').replace(/[》>]$/, '').trim();
+  if (!raw) return [];
+  const candidates: string[] = [raw];
+
+  // If title contains colon (e.g. 斗罗V：从加入武魂殿开始), add space and no-colon variants
+  if (/[：:]/.test(raw)) {
+    candidates.push(raw.replace(/[：:]/g, ' ').replace(/\s+/g, ' ').trim());
+    candidates.push(raw.replace(/[：:]/g, '').trim());
+  }
+
+  // Remove parenthesis annotations like （校对版） or (完结)
+  const noParen = raw.replace(/[（(][^）)]*[）)]/g, '').trim();
+  if (noParen && !candidates.includes(noParen)) {
+    candidates.push(noParen);
+  }
+
+  return candidates;
+}
+
+const quanbenCatalogCache = new Map<string, Array<{ href: string; title: string }>>();
+
 async function getQuanbenSlug(bookName: string): Promise<string | null> {
   if (!bookName) return null;
-  const cleanName = bookName.replace(/<[^>]+>/g, '').replace(/[，,！!？?：:].*$/, '').trim();
-  if (!cleanName) return null;
-  if (quanbenSlugCache.has(cleanName)) return quanbenSlugCache.get(cleanName)!;
+  const candidates = getCleanSearchCandidates(bookName);
+  for (const c of candidates) {
+    if (quanbenSlugCache.has(c)) return quanbenSlugCache.get(c)!;
+  }
 
+  for (const c of candidates) {
+    try {
+      const searchUrl = `https://quanben.io/index.php?c=book&a=search&keywords=${encodeURIComponent(c)}`;
+      const res = await fetch(searchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        },
+        signal: AbortSignal.timeout(4500)
+      });
+      if (res.ok) {
+        const html = await res.text();
+        const $ = cheerio.load(html);
+        const list: Array<{ slug: string; title: string }> = [];
+        $('a[href*="/n/"]').each((_, el) => {
+          const href = $(el).attr('href') || '';
+          const text = $(el).text().trim().replace(/^[《<]/, '').replace(/[》>].*$/, '').trim();
+          const m = href.match(/\/n\/([^\/]+)\/?$/);
+          if (m && text) {
+            list.push({ slug: m[1], title: text });
+          }
+        });
+
+        // 1. Exact match
+        const exact = list.find(item => candidates.some(cand => item.title === cand));
+        if (exact) {
+          quanbenSlugCache.set(bookName, exact.slug);
+          return exact.slug;
+        }
+        // 2. Starts with / includes match
+        const starts = list.find(item => candidates.some(cand => item.title.startsWith(cand) || cand.startsWith(item.title)));
+        if (starts) {
+          quanbenSlugCache.set(bookName, starts.slug);
+          return starts.slug;
+        }
+        const contains = list.find(item => candidates.some(cand => item.title.includes(cand) || cand.includes(item.title)));
+        if (contains) {
+          quanbenSlugCache.set(bookName, contains.slug);
+          return contains.slug;
+        }
+      }
+    } catch (e) {}
+  }
+  return null;
+}
+
+async function getQuanbenCatalog(slug: string): Promise<Array<{ href: string; title: string }>> {
+  if (quanbenCatalogCache.has(slug)) return quanbenCatalogCache.get(slug)!;
   try {
-    const searchUrl = `https://quanben.io/index.php?c=book&a=search&keywords=${encodeURIComponent(cleanName)}`;
-    const res = await fetch(searchUrl, {
+    const listUrl = `https://quanben.io/n/${slug}/list.html`;
+    const res = await fetch(listUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       },
@@ -966,45 +1126,63 @@ async function getQuanbenSlug(bookName: string): Promise<string | null> {
     if (res.ok) {
       const html = await res.text();
       const $ = cheerio.load(html);
-      const candidates: Array<{ slug: string; title: string }> = [];
-      $('a[href*="/n/"]').each((_, el) => {
+      const chaps: Array<{ href: string; title: string }> = [];
+      $('a[href*=".html"]').each((_, el) => {
         const href = $(el).attr('href') || '';
-        const text = $(el).text().trim().replace(/^[《<]/, '').replace(/[》>].*$/, '').trim();
-        const m = href.match(/\/n\/([^\/]+)\/?$/);
-        if (m && text) {
-          candidates.push({ slug: m[1], title: text });
+        const title = $(el).text().trim();
+        if (href && href.match(/\/\d+\.html$/)) {
+          const fullUrl = href.startsWith('http') ? href : `https://quanben.io${href.startsWith('/') ? '' : '/'}${href}`;
+          chaps.push({ href: fullUrl, title });
         }
       });
-
-      const exact = candidates.find(c => c.title === cleanName);
-      if (exact) {
-        quanbenSlugCache.set(cleanName, exact.slug);
-        return exact.slug;
-      }
-      const starts = candidates.find(c => c.title.startsWith(cleanName));
-      if (starts) {
-        quanbenSlugCache.set(cleanName, starts.slug);
-        return starts.slug;
-      }
-      const contains = candidates.find(c => c.title.includes(cleanName));
-      if (contains) {
-        quanbenSlugCache.set(cleanName, contains.slug);
-        return contains.slug;
+      if (chaps.length > 0) {
+        quanbenCatalogCache.set(slug, chaps);
+        return chaps;
       }
     }
   } catch (e) {}
-  return null;
+  return [];
 }
 
-async function fetchQuanbenChapter(slug: string, chapNum: number): Promise<{ title?: string; paras: string[] }> {
+async function fetchQuanbenChapter(
+  slug: string,
+  chapNum: number,
+  expectedTitle?: string
+): Promise<{ title?: string; paras: string[] }> {
   try {
-    const url = `https://quanben.io/n/${slug}/${chapNum}.html`;
-    const html = await fetchPageSmart(url, 4500);
-    const extracted = await extractParagraphsFromHtml(html, url);
-    return extracted;
-  } catch (e) {
-    return { paras: [] };
-  }
+    let targetUrl = `https://quanben.io/n/${slug}/${chapNum}.html`;
+    const cleanT = (expectedTitle || '').replace(/^(?:第\s*\d+\s*章|Chương\s*\d+)\s*[:：]?\s*/i, '').trim();
+
+    // Check catalog to get exact chapter link
+    const catalog = await getQuanbenCatalog(slug);
+    if (catalog.length > 0) {
+      let matched = (chapNum > 0 && chapNum <= catalog.length) ? catalog[chapNum - 1] : undefined;
+      // If index-matched doesn't verify with title, search list
+      if (cleanT && matched && !matched.title.includes(cleanT)) {
+        const titleMatch = catalog.find(c => c.title.includes(cleanT) || cleanT.includes(c.title));
+        if (titleMatch) matched = titleMatch;
+      }
+      if (!matched && chapNum > 0) {
+        matched = catalog.find(c => {
+          const m = c.title.match(/第\s*(\d+)\s*章/);
+          return m && parseInt(m[1], 10) === chapNum;
+        });
+      }
+      if (matched && matched.href) {
+        targetUrl = matched.href;
+      }
+    }
+
+    const html = await fetchPageSmart(targetUrl, 4500);
+    const extracted = await extractParagraphsFromHtml(html, targetUrl);
+    if (
+      extracted.paras.length >= 4 &&
+      !isMismatchedChapter(extracted.paras, chapNum, expectedTitle, undefined, extracted.title)
+    ) {
+      return extracted;
+    }
+  } catch (e) {}
+  return { paras: [] };
 }
 
 /**
@@ -1093,7 +1271,8 @@ async function fetchWebMirrorChapter(
 ): Promise<{ title?: string; paras: string[] } | null> {
   if (!bookName) return null;
   const cleanT = (chapterTitle || '').replace(/^(?:第\s*\d+\s*章|Chương\s*\d+)\s*[:：]?\s*/i, '').trim();
-  const cleanBook = bookName.replace(/<[^>]+>/g, '').replace(/[，,！!？?：:].*$/, '').trim();
+  const searchCandidates = getCleanSearchCandidates(bookName);
+  const cleanBook = searchCandidates[0] || bookName.replace(/<[^>]+>/g, '').trim();
 
   try {
     // Strategy 1: Check catalog cache
@@ -1126,18 +1305,21 @@ async function fetchWebMirrorChapter(
         try {
           const chapHtml = await fetchPageSmart(targetItem.url, 5000);
           const extracted = await extractParagraphsFromHtml(chapHtml, targetItem.url);
-          if (extracted.paras.length >= 4 && !isMismatchedChapter(extracted.paras, chapNum, cleanT, cleanBook)) {
+          if (extracted.paras.length >= 4 && !isMismatchedChapter(extracted.paras, chapNum, cleanT, cleanBook, extracted.title)) {
             return { title: cleanT || targetItem.title, paras: extracted.paras };
           }
         } catch (e) {}
       }
     }
 
-    // Strategy 2: Direct Search on DuckDuckGo
-    const searchQueries = [
-      `${cleanBook} "第${chapNum}章"`,
-      cleanT ? `${cleanBook} "${cleanT}"` : ''
-    ].filter(Boolean);
+    // Strategy 2: Direct Search on DuckDuckGo using full book title and candidates
+    const searchQueries: string[] = [];
+    for (const cand of searchCandidates.slice(0, 2)) {
+      searchQueries.push(`"${cand}" "第${chapNum}章"`);
+      if (cleanT && cleanT.length >= 2) {
+        searchQueries.push(`"${cand}" "${cleanT}"`);
+      }
+    }
 
     const candidateUrls: string[] = [];
     for (const query of searchQueries) {
@@ -1192,7 +1374,7 @@ async function fetchWebMirrorChapter(
           $c('a').each((_, aEl) => {
             const aText = $c(aEl).text().trim();
             if (
-              (cleanT && aText.includes(cleanT)) ||
+              (cleanT && cleanT.length >= 2 && aText.includes(cleanT)) ||
               aText.includes(`第${chapNum}章`)
             ) {
               const aHref = $c(aEl).attr('href');
@@ -1210,7 +1392,7 @@ async function fetchWebMirrorChapter(
         const extracted = await extractParagraphsFromHtml(chapHtml, chapUrl);
         if (
           extracted.paras.length >= 4 &&
-          !isMismatchedChapter(extracted.paras, chapNum, cleanT, cleanBook)
+          !isMismatchedChapter(extracted.paras, chapNum, cleanT, cleanBook, extracted.title)
         ) {
           return { title: cleanT || extracted.title, paras: extracted.paras };
         }
@@ -1305,7 +1487,8 @@ export async function getQimaoChapter(
       const pageTitle = $('.chapter-title').text().trim() || $('.title_txtbox').text().trim() || $('h1').first().text().trim();
       if (pageTitle && !fetchedTitle) fetchedTitle = pageTitle;
 
-      $('.article p, .chapter-content p, .reader-content p, .txt p, .content p').each((_, el) => {
+      // Note: ONLY match dedicated chapter content containers, never loose .content p which captures site chrome
+      $('.article p, .chapter-content p, .reader-content p, .articlebox p, #nr1 p').each((_, el) => {
         const t = $(el).text().trim();
         if (t) paras.push(t);
       });
@@ -1323,11 +1506,11 @@ export async function getQimaoChapter(
   if (paras.length === 0 && bookName) {
     const chapNum = extractChapterNumber(chapterTitle || fetchedTitle, chapterIndex, cleanChapId);
 
-    // Fallback A: Rescue via Quanben Full-text Engine
+    // Fallback A: Rescue via Quanben Full-text Engine (Accurate title matching + catalog lookup)
     try {
       const slug = await getQuanbenSlug(bookName);
       if (slug) {
-        const qbRes = await fetchQuanbenChapter(slug, chapNum);
+        const qbRes = await fetchQuanbenChapter(slug, chapNum, chapterTitle || fetchedTitle);
         if (qbRes.paras.length >= 4) {
           paras = qbRes.paras;
           if (qbRes.title && !fetchedTitle) fetchedTitle = qbRes.title;
@@ -1335,7 +1518,7 @@ export async function getQimaoChapter(
       }
     } catch (e: any) {}
 
-    // Fallback B: Rescue via Web Novel Mirrors (jwxs / mangguoshufang / piaotian / etc.)
+    // Fallback B: Rescue via Web Novel Mirrors (with strict mismatch checking)
     if (paras.length === 0) {
       try {
         const mirrorRes = await fetchWebMirrorChapter(bookName, chapterTitle || fetchedTitle, chapNum, author);
@@ -1363,7 +1546,7 @@ export async function getQimaoChapter(
             try {
               const dHtml = await fetchPageSmart(desktopUrl, 4000);
               const extracted = await extractParagraphsFromHtml(dHtml, desktopUrl);
-              if (extracted.paras.length >= 4 && !isMismatchedChapter(extracted.paras, chapNum, fetchedTitle, bookName)) {
+              if (extracted.paras.length >= 4 && !isMismatchedChapter(extracted.paras, chapNum, fetchedTitle, bookName, extracted.title)) {
                 paras = extracted.paras;
                 if (!fetchedTitle) fetchedTitle = matchedZhChap.title;
               }
@@ -1374,7 +1557,7 @@ export async function getQimaoChapter(
               try {
                 const mHtml = await fetchPageSmart(mUrl, 4000);
                 const extracted = await extractParagraphsFromHtml(mHtml, mUrl);
-                if (extracted.paras.length >= 4 && !isMismatchedChapter(extracted.paras, chapNum, fetchedTitle, bookName)) {
+                if (extracted.paras.length >= 4 && !isMismatchedChapter(extracted.paras, chapNum, fetchedTitle, bookName, extracted.title)) {
                   paras = extracted.paras;
                   if (!fetchedTitle) fetchedTitle = matchedZhChap.title;
                 }
@@ -1393,16 +1576,23 @@ export async function getQimaoChapter(
     displayTitle = `第${chapterIndex}章 ${cleanTitleNoNum}`;
   }
 
-  // Deduplicate redundant chapter heading in first paragraph if present
-  if (paras.length > 0) {
+  // Deduplicate redundant chapter heading in first 1-2 paragraphs if present
+  while (paras.length > 0) {
     const firstP = paras[0].trim();
+    const cleanFirstP = firstP.replace(/^(?:第\s*\d+\s*章|Chương\s*\d+)\s*[:：]?\s*/i, '').trim();
+    const cleanTitle = (fetchedTitle || displayTitle).replace(/^(?:第\s*\d+\s*章|Chương\s*\d+)\s*[:：]?\s*/i, '').trim();
+
     if (
       firstP === displayTitle.trim() ||
       firstP === fetchedTitle.trim() ||
-      (/^第\s*\d+\s*章/.test(firstP) && firstP.length < 50) ||
-      (/^(?:Chapter|Chương)\s*\d+/i.test(firstP) && firstP.length < 50)
+      (cleanTitle && cleanFirstP === cleanTitle) ||
+      (/^第\s*\d+\s*章\s*$/.test(firstP)) ||
+      (/^第\s*\d+\s*章\s+.{1,30}$/.test(firstP) && firstP.length < 40) ||
+      (/^(?:Chapter|Chương)\s*\d+/i.test(firstP) && firstP.length < 40)
     ) {
       paras.shift();
+    } else {
+      break;
     }
   }
 

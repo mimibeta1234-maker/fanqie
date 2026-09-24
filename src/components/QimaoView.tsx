@@ -231,6 +231,7 @@ export const QimaoView: React.FC<QimaoViewProps> = ({
         body: JSON.stringify({
           bookId: currentBook?.book_id,
           bookName: currentBook?.book_name,
+          author: currentBook?.author,
           itemId,
           title,
           chapterIndex: index
