@@ -728,8 +728,24 @@ function isContentTruncated(paras: string[]): boolean {
     full.includes('服务协议简介') ||
     full.includes('隐私声明') ||
     full.includes('Privacy Statement') ||
-    full.includes('Terms of Service')
+    full.includes('Terms of Service') ||
+    full.includes('金山词霸') ||
+    full.includes('有道词典') ||
+    full.includes('CET4') ||
+    full.includes('CET6') ||
+    full.includes('考研/GRE/IELTS') ||
+    full.includes('考研英语') ||
+    full.includes('海词词典') ||
+    full.includes('英汉互译') ||
+    full.includes('双语例句') ||
+    full.includes('柯林斯')
   ) {
+    return true;
+  }
+
+  // Check Chinese character density: Chinese novel chapter must contain mostly Chinese characters
+  const hanziMatches = full.match(/[\u4e00-\u9fa5]/g) || [];
+  if (hanziMatches.length < 300 || (hanziMatches.length / full.length) < 0.45) {
     return true;
   }
 
@@ -1550,7 +1566,7 @@ export async function ensureMirrorCatalog(bookName: string, author?: string): Pr
               } else if (rawHref.startsWith('http://') || rawHref.startsWith('https://')) {
                 decoded = rawHref;
               }
-              const isJunk = /v\.qq\.com|bilibili\.com|youku\.com|iqiyi\.com|douyin\.com|kuaishou\.com|weibo\.com|zhihu\.com|baidu\.com|tieba|sohu\.com|163\.com|sina\.com|microsoft\.com|msn\.com|live\.com|windows\.com|google\.com|apple\.com|servicesagreement|privacy|terms/i.test(decoded);
+              const isJunk = /v\.qq\.com|bilibili\.com|youku\.com|iqiyi\.com|douyin\.com|kuaishou\.com|weibo\.com|zhihu\.com|baidu\.com|tieba|sohu\.com|163\.com|sina\.com|microsoft\.com|msn\.com|live\.com|windows\.com|google\.com|apple\.com|iciba\.com|youdao\.com|dict\.cn|hanyu|baike|wikipedia|csdn|jianshu|douban|ximalaya|kugou|chinadaily|eol\.cn|koolearn|xdf\.cn|xuexi|moe\.gov|oxford|cambridge|merriam|servicesagreement|privacy|terms/i.test(decoded);
               if (
                 decoded &&
                 !isJunk &&
@@ -1594,7 +1610,7 @@ export async function ensureMirrorCatalog(bookName: string, author?: string): Pr
                     } catch (e) {}
                   }
                 }
-                const isJunkBing = /v\.qq\.com|bilibili\.com|youku\.com|iqiyi\.com|douyin\.com|kuaishou\.com|weibo\.com|zhihu\.com|baidu\.com|tieba|sohu\.com|163\.com|sina\.com|microsoft\.com|msn\.com|live\.com|windows\.com|google\.com|apple\.com|servicesagreement|privacy|terms/i.test(decoded);
+                const isJunkBing = /v\.qq\.com|bilibili\.com|youku\.com|iqiyi\.com|douyin\.com|kuaishou\.com|weibo\.com|zhihu\.com|baidu\.com|tieba|sohu\.com|163\.com|sina\.com|microsoft\.com|msn\.com|live\.com|windows\.com|google\.com|apple\.com|iciba\.com|youdao\.com|dict\.cn|hanyu|baike|wikipedia|csdn|jianshu|douban|ximalaya|kugou|chinadaily|eol\.cn|koolearn|xdf\.cn|xuexi|moe\.gov|oxford|cambridge|merriam|servicesagreement|privacy|terms/i.test(decoded);
                 if (
                   decoded &&
                   !isJunkBing &&
@@ -1914,7 +1930,7 @@ async function fetchWebMirrorChapter(
                   } catch (e) {}
                 }
               }
-              const isJunkBing = /v\.qq\.com|bilibili\.com|youku\.com|iqiyi\.com|douyin\.com|kuaishou\.com|weibo\.com|zhihu\.com|baidu\.com|tieba|sohu\.com|163\.com|sina\.com|microsoft\.com|msn\.com|live\.com|windows\.com|google\.com|apple\.com|servicesagreement|privacy|terms/i.test(decoded);
+              const isJunkBing = /v\.qq\.com|bilibili\.com|youku\.com|iqiyi\.com|douyin\.com|kuaishou\.com|weibo\.com|zhihu\.com|baidu\.com|tieba|sohu\.com|163\.com|sina\.com|microsoft\.com|msn\.com|live\.com|windows\.com|google\.com|apple\.com|iciba\.com|youdao\.com|dict\.cn|hanyu|baike|wikipedia|csdn|jianshu|douban|ximalaya|kugou|chinadaily|eol\.cn|koolearn|xdf\.cn|xuexi|moe\.gov|oxford|cambridge|merriam|servicesagreement|privacy|terms/i.test(decoded);
               if (
                 decoded &&
                 !isJunkBing &&
