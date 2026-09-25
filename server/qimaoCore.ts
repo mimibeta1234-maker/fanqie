@@ -722,7 +722,13 @@ function isContentTruncated(paras: string[]): boolean {
     full.includes('第三方登录') ||
     full.includes('请先登录') ||
     full.includes('请登录后继续阅读') ||
-    full.includes('登录后免费阅读')
+    full.includes('登录后免费阅读') ||
+    full.includes('Microsoft 服务协议') ||
+    full.includes('Microsoft') ||
+    full.includes('服务协议简介') ||
+    full.includes('隐私声明') ||
+    full.includes('Privacy Statement') ||
+    full.includes('Terms of Service')
   ) {
     return true;
   }
@@ -1544,11 +1550,13 @@ export async function ensureMirrorCatalog(bookName: string, author?: string): Pr
               } else if (rawHref.startsWith('http://') || rawHref.startsWith('https://')) {
                 decoded = rawHref;
               }
-              const isJunk = /v\.qq\.com|bilibili\.com|youku\.com|iqiyi\.com|douyin\.com|kuaishou\.com|weibo\.com|zhihu\.com|baidu\.com|tieba|sohu\.com|163\.com|sina\.com/i.test(decoded);
+              const isJunk = /v\.qq\.com|bilibili\.com|youku\.com|iqiyi\.com|douyin\.com|kuaishou\.com|weibo\.com|zhihu\.com|baidu\.com|tieba|sohu\.com|163\.com|sina\.com|microsoft\.com|msn\.com|live\.com|windows\.com|google\.com|apple\.com|servicesagreement|privacy|terms/i.test(decoded);
               if (
                 decoded &&
                 !isJunk &&
                 !decoded.includes('duckduckgo.com') &&
+                !decoded.includes('bing.com') &&
+                !decoded.includes('microsoft.com') &&
                 !decoded.includes('qimao.com') &&
                 !decoded.includes('zongheng.com') &&
                 !candidateUrls.includes(decoded)
@@ -1586,12 +1594,13 @@ export async function ensureMirrorCatalog(bookName: string, author?: string): Pr
                     } catch (e) {}
                   }
                 }
-                const isJunkBing = /v\.qq\.com|bilibili\.com|youku\.com|iqiyi\.com|douyin\.com|kuaishou\.com|weibo\.com|zhihu\.com|baidu\.com|tieba|sohu\.com|163\.com|sina\.com/i.test(decoded);
+                const isJunkBing = /v\.qq\.com|bilibili\.com|youku\.com|iqiyi\.com|douyin\.com|kuaishou\.com|weibo\.com|zhihu\.com|baidu\.com|tieba|sohu\.com|163\.com|sina\.com|microsoft\.com|msn\.com|live\.com|windows\.com|google\.com|apple\.com|servicesagreement|privacy|terms/i.test(decoded);
                 if (
                   decoded &&
                   !isJunkBing &&
                   decoded.startsWith('http') &&
                   !decoded.includes('bing.com') &&
+                  !decoded.includes('microsoft.com') &&
                   !decoded.includes('qimao.com') &&
                   !decoded.includes('zongheng.com') &&
                   !candidateUrls.includes(decoded)
@@ -1905,12 +1914,13 @@ async function fetchWebMirrorChapter(
                   } catch (e) {}
                 }
               }
-              const isJunkBing = /v\.qq\.com|bilibili\.com|youku\.com|iqiyi\.com|douyin\.com|kuaishou\.com|weibo\.com|zhihu\.com|baidu\.com|tieba/i.test(decoded);
+              const isJunkBing = /v\.qq\.com|bilibili\.com|youku\.com|iqiyi\.com|douyin\.com|kuaishou\.com|weibo\.com|zhihu\.com|baidu\.com|tieba|sohu\.com|163\.com|sina\.com|microsoft\.com|msn\.com|live\.com|windows\.com|google\.com|apple\.com|servicesagreement|privacy|terms/i.test(decoded);
               if (
                 decoded &&
                 !isJunkBing &&
                 decoded.startsWith('http') &&
                 !decoded.includes('bing.com') &&
+                !decoded.includes('microsoft.com') &&
                 !decoded.includes('qimao.com') &&
                 !decoded.includes('zongheng.com') &&
                 !candidateUrls.includes(decoded)
