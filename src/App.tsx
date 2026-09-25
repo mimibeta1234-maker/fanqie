@@ -9,9 +9,7 @@ import { SearchResultsModal } from './components/SearchResultsModal';
 import { SavedBooksModal } from './components/SavedBooksModal';
 import { PlotSearchModal } from './components/PlotSearchModal';
 import { CompareView } from './components/CompareView';
-import { ScribdView } from './components/ScribdView';
 import { QimaoView } from './components/QimaoView';
-import { ZhihuView } from './components/ZhihuView';
 import { Book, Catalog, Chapter, DownloadTaskStatus, SavedBook } from './types';
 import { getSavedBooks, saveBook, removeSavedBook, isBookSaved } from './utils/savedBooks';
 import { ChapterBookmark, getBookmarks, toggleChapterBookmark } from './utils/chapterBookmarks';
@@ -25,11 +23,11 @@ export default function App() {
   // Authentication gate
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => isUserAuthenticated());
 
-  // Studio navigation tab: 'downloader' | 'qimao' | 'zhihu' | 'scribd' | 'compare'
+  // Studio navigation tab: 'downloader' | 'qimao' | 'compare'
   const [activeTab, setActiveTab] = useState<StudioTab>(() => {
     try {
       const saved = localStorage.getItem('fanqie_active_tab') as StudioTab;
-      if (saved && ['downloader', 'qimao', 'zhihu', 'scribd', 'compare'].includes(saved)) {
+      if (saved && ['downloader', 'qimao', 'compare'].includes(saved)) {
         return saved;
       }
     } catch (e) {}
@@ -447,12 +445,6 @@ export default function App() {
             onClearInitialBookId={() => setQimaoTargetBookId(null)}
             onSavedBooksUpdate={() => setSavedBooks(getSavedBooks())}
           />
-        ) : activeTab === 'zhihu' ? (
-          /* Zhihu Downloader View */
-          <ZhihuView />
-        ) : activeTab === 'scribd' ? (
-          /* Scribd Downloader View */
-          <ScribdView />
         ) : (
           /* Compare Tool View */
           <CompareView />

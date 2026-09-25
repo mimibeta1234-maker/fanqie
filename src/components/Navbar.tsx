@@ -1,7 +1,7 @@
 import React from 'react';
 import { Bookmark, Download, FileText, GitCompare, Image as ImageIcon, BookOpen, BookmarkCheck } from 'lucide-react';
 
-export type StudioTab = 'downloader' | 'qimao' | 'zhihu' | 'scribd' | 'compare';
+export type StudioTab = 'downloader' | 'qimao' | 'compare';
 
 interface NavbarProps {
   activeTab: StudioTab;
@@ -64,34 +64,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <BookOpen className="w-3.5 h-3.5 text-amber-600" />
               <span>Qimao Downloader</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => onTabChange('zhihu')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                activeTab === 'zhihu'
-                  ? 'bg-white text-stone-900 shadow-xs border border-stone-200/60'
-                  : 'text-stone-500 hover:text-stone-800'
-              }`}
-              id="tab-zhihu-downloader"
-            >
-              <BookmarkCheck className="w-3.5 h-3.5 text-sky-600" />
-              <span>Zhihu (Free & VIP)</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => onTabChange('scribd')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                activeTab === 'scribd'
-                  ? 'bg-white text-stone-900 shadow-xs border border-stone-200/60'
-                  : 'text-stone-500 hover:text-stone-800'
-              }`}
-              id="tab-scribd-downloader"
-            >
-              <FileText className="w-3.5 h-3.5 text-blue-600" />
-              <span>Scribd Downloader</span>
             </button>
 
             <button
