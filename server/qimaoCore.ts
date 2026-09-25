@@ -1506,7 +1506,7 @@ export async function ensureMirrorCatalog(bookName: string, author?: string): Pr
       const candidateUrls: string[] = [];
 
       for (const query of searchQueries.slice(0, 2)) {
-        if (candidateUrls.length >= 8) break;
+        if (candidateUrls.length >= 12) break;
 
         // 1. DuckDuckGo HTML
         try {
@@ -1545,8 +1545,8 @@ export async function ensureMirrorCatalog(bookName: string, author?: string): Pr
           }
         } catch (e) {}
 
-        // 2. Bing if candidateUrls < 4
-        if (candidateUrls.length < 4) {
+        // 2. Bing
+        if (candidateUrls.length < 8) {
           try {
             const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=zh-Hans`;
             const res = await fetch(bingUrl, {
@@ -1559,10 +1559,10 @@ export async function ensureMirrorCatalog(bookName: string, author?: string): Pr
             if (res.ok) {
               const html = await res.text();
               const $ = cheerio.load(html);
-              $('h2 a, .b_algo a').each((_, el) => {
+              $('h2 a, .b_algo a, a[href*="bing.com/ck/a"]').each((_, el) => {
                 const rawHref = $(el).attr('href') || '';
                 let decoded = rawHref;
-                if (rawHref.includes('bing.com/ck/a?')) {
+                if (rawHref.includes('bing.com/ck/a')) {
                   const m = rawHref.match(/u=a1([a-zA-Z0-9_-]+)/);
                   if (m) {
                     try {
@@ -1587,6 +1587,49 @@ export async function ensureMirrorCatalog(bookName: string, author?: string): Pr
               });
             }
           } catch (e) {}
+        }
+
+        // 3. Direct Novel Search Gateways
+        if (candidateUrls.length < 8) {
+          const directGateways = [
+            `https://www.hamuxs.com/search?q=${encodeURIComponent(cleanSearchBook)}`,
+            `https://www.kanshudashi.com/search?keyword=${encodeURIComponent(cleanSearchBook)}`,
+            `https://www.69shuba.cx/modules/article/search.php?searchkey=${encodeURIComponent(cleanSearchBook)}`,
+            `https://m.sogou.com/web/searchList.jsp?keyword=${encodeURIComponent(cleanSearchBook + ' 章节目录')}`
+          ];
+
+          await Promise.allSettled(
+            directGateways.map(async (gUrl) => {
+              try {
+                const gRes = await fetch(gUrl, {
+                  headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                    'Accept-Language': 'zh-CN,zh;q=0.9'
+                  },
+                  signal: AbortSignal.timeout(3000)
+                });
+                if (gRes.ok) {
+                  const gHtml = await gRes.text();
+                  const $g = cheerio.load(gHtml);
+                  $g('a[href*="/read/"], a[href*="/chapter/"], a[href*="/xiaoshuo/"], a[href*="/book/"], a[href*="/book_"], a[href*=".html"]').each((_, aEl) => {
+                    const rawHref = $g(aEl).attr('href');
+                    if (rawHref) {
+                      try {
+                        const full = new URL(rawHref, gUrl).toString();
+                        if (
+                          full.startsWith('http') &&
+                          !full.includes('search') &&
+                          !candidateUrls.includes(full)
+                        ) {
+                          candidateUrls.push(full);
+                        }
+                      } catch (e) {}
+                    }
+                  });
+                }
+              } catch (e) {}
+            })
+          );
         }
       }
 
@@ -1934,12 +1977,24 @@ export async function getQimaoChapter(
   }
 
   // 2. Multi-source Rescue Fallback if Qimao web was truncated or locked
-  if (paras.length === 0 && bookName) {
+  let resolvedBookName = bookName;
+  let resolvedAuthor = author;
+  if (!resolvedBookName && cleanBookId) {
+    try {
+      const bInfo = await getQimaoBookInfo(cleanBookId);
+      if (bInfo && bInfo.book_name) {
+        resolvedBookName = bInfo.book_name;
+        if (!resolvedAuthor && bInfo.author) resolvedAuthor = bInfo.author;
+      }
+    } catch (e) {}
+  }
+
+  if (paras.length === 0 && resolvedBookName) {
     const chapNum = extractChapterNumber(chapterTitle || fetchedTitle, chapterIndex, cleanChapId);
 
     // Fallback 0: Known Fanqie syndication
-    const searchCandidates = getCleanSearchCandidates(bookName);
-    const cleanBook = searchCandidates[0] || bookName.replace(/<[^>]+>/g, '').trim();
+    const searchCandidates = getCleanSearchCandidates(resolvedBookName);
+    const cleanBook = searchCandidates[0] || resolvedBookName.replace(/<[^>]+>/g, '').trim();
     if (fanqieBookIdCache.has(cleanBook)) {
       try {
         const fqRes = await fetchFanqieCrossRescue(fanqieBookIdCache.get(cleanBook)!, chapNum, chapterTitle || fetchedTitle);
@@ -1953,7 +2008,7 @@ export async function getQimaoChapter(
     // Fallback A: Rescue via Quanben Full-text Engine (Accurate title matching + catalog lookup)
     if (paras.length === 0) {
       try {
-        const slug = await getQuanbenSlug(bookName);
+        const slug = await getQuanbenSlug(resolvedBookName);
         if (slug) {
           const qbRes = await fetchQuanbenChapter(slug, chapNum, chapterTitle || fetchedTitle);
           if (qbRes.paras.length >= 4) {
@@ -1967,7 +2022,7 @@ export async function getQimaoChapter(
     // Fallback B: Rescue via Web Novel Mirrors (with strict mismatch checking)
     if (paras.length === 0) {
       try {
-        const mirrorRes = await fetchWebMirrorChapter(bookName, chapterTitle || fetchedTitle, chapNum, author);
+        const mirrorRes = await fetchWebMirrorChapter(resolvedBookName, chapterTitle || fetchedTitle, chapNum, resolvedAuthor);
         if (mirrorRes && mirrorRes.paras.length >= 4) {
           paras = mirrorRes.paras;
           if (mirrorRes.title && !fetchedTitle) fetchedTitle = mirrorRes.title;
@@ -1978,7 +2033,7 @@ export async function getQimaoChapter(
     // Fallback C: Rescue via Zongheng Desktop / Mobile Reader with real chapter ID mapping
     if (paras.length === 0) {
       try {
-        const zhBookId = await getZonghengBookId(bookName);
+        const zhBookId = await getZonghengBookId(resolvedBookName);
         if (zhBookId) {
           const zhList = await getZonghengChapters(zhBookId);
           let matchedZhChap = zhList[chapNum - 1];
@@ -1992,7 +2047,7 @@ export async function getQimaoChapter(
             try {
               const dHtml = await fetchPageSmart(desktopUrl, 4000);
               const extracted = await extractParagraphsFromHtml(dHtml, desktopUrl);
-              if (extracted.paras.length >= 4 && !isMismatchedChapter(extracted.paras, chapNum, fetchedTitle, bookName, extracted.title)) {
+              if (extracted.paras.length >= 4 && !isMismatchedChapter(extracted.paras, chapNum, fetchedTitle, resolvedBookName, extracted.title)) {
                 paras = extracted.paras;
                 if (!fetchedTitle) fetchedTitle = matchedZhChap.title;
               }
@@ -2003,7 +2058,7 @@ export async function getQimaoChapter(
               try {
                 const mHtml = await fetchPageSmart(mUrl, 4000);
                 const extracted = await extractParagraphsFromHtml(mHtml, mUrl);
-                if (extracted.paras.length >= 4 && !isMismatchedChapter(extracted.paras, chapNum, fetchedTitle, bookName, extracted.title)) {
+                if (extracted.paras.length >= 4 && !isMismatchedChapter(extracted.paras, chapNum, fetchedTitle, resolvedBookName, extracted.title)) {
                   paras = extracted.paras;
                   if (!fetchedTitle) fetchedTitle = matchedZhChap.title;
                 }

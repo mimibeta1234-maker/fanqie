@@ -212,13 +212,30 @@ class DownloadManager {
                     ch.index,
                     task.bookInfo?.author
                   );
-                  if (res && res.content) {
+                  const isLocked = !res || !res.content || res.content.includes('为七猫VIP付费') || res.content.trim().length < 80;
+                  if (!isLocked) {
                     ch.content = res.content;
                     contentCache.set(ch.itemId, res.content);
                     completed++;
                   } else {
-                    ch.error = 'Lỗi tải chương';
-                    failed++;
+                    // Retry once with fallback
+                    const rescue = await getQimaoChapter(
+                      task.bookId,
+                      ch.itemId,
+                      ch.title,
+                      task.bookInfo?.book_name,
+                      ch.index,
+                      task.bookInfo?.author
+                    );
+                    if (rescue && rescue.content && !rescue.content.includes('为七猫VIP付费') && rescue.content.trim().length >= 80) {
+                      ch.content = rescue.content;
+                      contentCache.set(ch.itemId, rescue.content);
+                      completed++;
+                    } else {
+                      ch.content = (rescue && rescue.content) || (res && res.content) || '';
+                      ch.error = 'Chương VIP chưa tìm được bản mở khóa';
+                      failed++;
+                    }
                   }
                 } catch (e: any) {
                   ch.error = e.message || 'Lỗi tải chương';
