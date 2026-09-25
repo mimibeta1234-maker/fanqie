@@ -845,10 +845,15 @@ export function isRealSubpage(currentUrlStr: string, nextHref: string, linkText:
     return true;
   }
 
-  // Case 3: Link text explicitly has pagination indicator (e.g. 1/2, 2/3) in same directory
-  const hasPageIndicator = /[(（]\s*\d+\s*[\/／]\s*\d+\s*[)）]|第\s*\d+\s*页/.test(linkText);
-  if (hasPageIndicator && curPath.substring(0, curPath.lastIndexOf('/')) === nextPath.substring(0, nextPath.lastIndexOf('/'))) {
-    return subpageRegex.test(nextBase);
+  // Case 3: Link text explicitly has pagination indicator (e.g. 1/2, 2/3, 下一页, 下页) in same directory
+  const isNextPageText = /下\s*一?\s*页|[(（]\s*\d+\s*[\/／]\s*\d+\s*[)）]|第\s*\d+\s*页/i.test(linkText);
+  if (isNextPageText) {
+    if (subpageRegex.test(nextBase)) return true;
+    const curDir = curPath.substring(0, curPath.lastIndexOf('/'));
+    const nextDir = nextPath.substring(0, nextPath.lastIndexOf('/'));
+    if (curDir === nextDir && (nextBase.startsWith(cleanCurBase) || /^\d+_\d+$/.test(nextBase))) {
+      return true;
+    }
   }
 
   return false;
@@ -891,12 +896,32 @@ async function fetchPageSmart(url: string, timeoutMs: number = 7500): Promise<st
 async function extractParagraphsFromHtml(
   html: string,
   pageUrl?: string,
-  depth: number = 0
+  depth: number = 0,
+  visitedUrls: Set<string> = new Set()
 ): Promise<{ title?: string; paras: string[] }> {
+  if (pageUrl) visitedUrls.add(pageUrl);
   const $ = cheerio.load(html);
 
+  // Extract candidate next page link before DOM stripping
+  let nextPageRelative = '';
+  if (pageUrl) {
+    $('a').each((_, a) => {
+      const aText = $(a).text().trim();
+      const aHref = $(a).attr('href');
+      if (aHref && isRealSubpage(pageUrl, aHref, aText)) {
+        try {
+          const nextUrl = new URL(aHref, pageUrl).toString();
+          if (!visitedUrls.has(nextUrl)) {
+            nextPageRelative = aHref;
+            return false;
+          }
+        } catch (e) {}
+      }
+    });
+  }
+
   // Remove scripts, styles, buttons, advertisements, navbars
-  $('script, style, ins, a.read-btn, .ads, .ad, .advertisement, header, footer, nav, .header, .footer, .bottem, .bottem2, #header, #footer').remove();
+  $('script, style, ins, a.read-btn, .ads, .ad, .advertisement, header, footer, nav, .header, .footer, #header, #footer').remove();
 
   const title = $('h1, .headline, .title, #title').first().text().trim();
 
@@ -951,41 +976,30 @@ async function extractParagraphsFromHtml(
 
   paras = cleanParagraphs(paras);
 
-  // Check for multi-page continuation ONLY if verified as true subpage of the same chapter
-  if (depth < 2 && pageUrl) {
-    let nextPageRelative = '';
-    $('a').each((_, a) => {
-      const aText = $(a).text().trim();
-      const aHref = $(a).attr('href');
-      if (aHref && isRealSubpage(pageUrl, aHref, aText)) {
-        nextPageRelative = aHref;
-        return false;
-      }
-    });
+  // Follow multi-page continuation up to 8 subpages
+  if (depth < 8 && pageUrl && nextPageRelative) {
+    try {
+      const nextUrl = new URL(nextPageRelative, pageUrl).toString();
+      if (nextUrl !== pageUrl && !visitedUrls.has(nextUrl)) {
+        visitedUrls.add(nextUrl);
+        const nextHtml = await fetchPageSmart(nextUrl, 5000);
+        const nextRes = await extractParagraphsFromHtml(nextHtml, nextUrl, depth + 1, visitedUrls);
 
-    if (nextPageRelative) {
-      try {
-        const nextUrl = new URL(nextPageRelative, pageUrl).toString();
-        if (nextUrl !== pageUrl) {
-          const nextHtml = await fetchPageSmart(nextUrl, 4000);
-          const nextRes = await extractParagraphsFromHtml(nextHtml, nextUrl, depth + 1);
-
-          // Verify next page does not belong to a different chapter
-          let isSameChapter = true;
-          if (title && nextRes.title) {
-            const m1 = title.match(/第\s*(\d+)\s*章/);
-            const m2 = nextRes.title.match(/第\s*(\d+)\s*章/);
-            if (m1 && m2 && m1[1] !== m2[1]) {
-              isSameChapter = false;
-            }
-          }
-
-          if (isSameChapter && nextRes.paras.length > 0) {
-            paras = cleanParagraphs(paras.concat(nextRes.paras));
+        // Verify next page does not belong to a different chapter
+        let isSameChapter = true;
+        if (title && nextRes.title) {
+          const m1 = title.match(/第\s*(\d+)\s*章/);
+          const m2 = nextRes.title.match(/第\s*(\d+)\s*章/);
+          if (m1 && m2 && m1[1] !== m2[1]) {
+            isSameChapter = false;
           }
         }
-      } catch (e) {}
-    }
+
+        if (isSameChapter && nextRes.paras.length > 0) {
+          paras = cleanParagraphs(paras.concat(nextRes.paras));
+        }
+      }
+    } catch (e) {}
   }
 
   return { title, paras };
