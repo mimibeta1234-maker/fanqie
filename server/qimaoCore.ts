@@ -857,7 +857,7 @@ export function isRealSubpage(currentUrlStr: string, nextHref: string, linkText:
 /**
  * Robust fetcher handling UTF-8, GBK, GB2312 encodings and timeout
  */
-async function fetchPageSmart(url: string, timeoutMs: number = 6000): Promise<string> {
+async function fetchPageSmart(url: string, timeoutMs: number = 7500): Promise<string> {
   const res = await fetch(url, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -1816,52 +1816,103 @@ async function fetchWebMirrorChapter(
     }
   } catch (e: any) {}
 
-  // Strategy 2: Single targeted search on DuckDuckGo/Bing for missing single chapter
+  // Strategy 2: Single targeted search across search engines for missing single chapter
   try {
     const cleanSearchBook = cleanBook.replace(/[：:，,！？!?（）()《》【】]/g, ' ').replace(/\s+/g, ' ').trim();
     const query = cleanT ? `${cleanSearchBook} 第${chapNum}章 ${cleanT}` : `${cleanSearchBook} 第${chapNum}章`;
 
     const candidateUrls: string[] = [];
-    try {
-      const qUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-      const res = await fetch(qUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
-          'Accept-Language': 'zh-CN,zh-Hans;q=0.9'
-        },
-        signal: AbortSignal.timeout(3500)
-      });
-      if (res.ok) {
-        const html = await res.text();
-        const $ = cheerio.load(html);
-        $('a').each((_, el) => {
-          const rawHref = $(el).attr('href') || '';
-          let decoded = '';
-          if (rawHref.includes('uddg=')) {
-            const m = rawHref.match(/uddg=([^&]+)/);
-            if (m) decoded = decodeURIComponent(m[1]);
-          } else if (rawHref.startsWith('http://') || rawHref.startsWith('https://')) {
-            decoded = rawHref;
-          }
-          const isJunk = /v\.qq\.com|bilibili\.com|youku\.com|iqiyi\.com|douyin\.com|kuaishou\.com|weibo\.com|zhihu\.com|baidu\.com|tieba/i.test(decoded);
-          if (
-            decoded &&
-            !isJunk &&
-            !decoded.includes('duckduckgo.com') &&
-            !decoded.includes('qimao.com') &&
-            !decoded.includes('zongheng.com') &&
-            !candidateUrls.includes(decoded)
-          ) {
-            candidateUrls.push(decoded);
-          }
-        });
-      }
-    } catch (e) {}
 
-    for (const u of candidateUrls.slice(0, 5)) {
+    // Parallel search queries across DDG and Bing
+    await Promise.allSettled([
+      // 1. DuckDuckGo HTML
+      (async () => {
+        try {
+          const qUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+          const res = await fetch(qUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+              'Accept-Language': 'zh-CN,zh-Hans;q=0.9'
+            },
+            signal: AbortSignal.timeout(3500)
+          });
+          if (res.ok) {
+            const html = await res.text();
+            const $ = cheerio.load(html);
+            $('a').each((_, el) => {
+              const rawHref = $(el).attr('href') || '';
+              let decoded = '';
+              if (rawHref.includes('uddg=')) {
+                const m = rawHref.match(/uddg=([^&]+)/);
+                if (m) decoded = decodeURIComponent(m[1]);
+              } else if (rawHref.startsWith('http://') || rawHref.startsWith('https://')) {
+                decoded = rawHref;
+              }
+              const isJunk = /v\.qq\.com|bilibili\.com|youku\.com|iqiyi\.com|douyin\.com|kuaishou\.com|weibo\.com|zhihu\.com|baidu\.com|tieba/i.test(decoded);
+              if (
+                decoded &&
+                !isJunk &&
+                !decoded.includes('duckduckgo.com') &&
+                !decoded.includes('qimao.com') &&
+                !decoded.includes('zongheng.com') &&
+                !candidateUrls.includes(decoded)
+              ) {
+                candidateUrls.push(decoded);
+              }
+            });
+          }
+        } catch (e) {}
+      })(),
+
+      // 2. Bing
+      (async () => {
+        try {
+          const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=zh-Hans`;
+          const res = await fetch(bingUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              'Accept-Language': 'zh-CN,zh;q=0.9'
+            },
+            signal: AbortSignal.timeout(3500)
+          });
+          if (res.ok) {
+            const html = await res.text();
+            const $ = cheerio.load(html);
+            $('h2 a, .b_algo a, a[href*="bing.com/ck/a"]').each((_, el) => {
+              const rawHref = $(el).attr('href') || '';
+              let decoded = rawHref;
+              if (rawHref.includes('bing.com/ck/a')) {
+                const m = rawHref.match(/u=a1([a-zA-Z0-9_-]+)/);
+                if (m) {
+                  try {
+                    let base64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+                    while (base64.length % 4) base64 += '=';
+                    decoded = Buffer.from(base64, 'base64').toString('utf-8');
+                  } catch (e) {}
+                }
+              }
+              const isJunkBing = /v\.qq\.com|bilibili\.com|youku\.com|iqiyi\.com|douyin\.com|kuaishou\.com|weibo\.com|zhihu\.com|baidu\.com|tieba/i.test(decoded);
+              if (
+                decoded &&
+                !isJunkBing &&
+                decoded.startsWith('http') &&
+                !decoded.includes('bing.com') &&
+                !decoded.includes('qimao.com') &&
+                !decoded.includes('zongheng.com') &&
+                !candidateUrls.includes(decoded)
+              ) {
+                candidateUrls.push(decoded);
+              }
+            });
+          }
+        } catch (e) {}
+      })()
+    ]);
+
+    for (const u of candidateUrls.slice(0, 8)) {
       if (u.includes('fanqienovel.com')) continue;
       try {
-        const pageHtml = await fetchPageSmart(u, 4000);
+        const pageHtml = await fetchPageSmart(u, 6000);
         const extracted = await extractParagraphsFromHtml(pageHtml, u);
         if (
           extracted.paras.length >= 4 &&

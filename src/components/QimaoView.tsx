@@ -598,9 +598,11 @@ export const QimaoView: React.FC<QimaoViewProps> = ({
           onOpenChapterTitles={() => setIsChapterTitlesOpen(true)}
           onPreviewChapter={(ch, idx) => {
             setIsCatalogOpen(false);
-            handleOpenReader(ch.item_id, ch.title, idx || (ch as any).originalIndex);
+            const realIndex = (ch as any).originalIndex ?? (idx !== undefined ? idx + 1 : undefined);
+            handleOpenReader(ch.item_id, ch.title, realIndex);
           }}
           onFetchChapterContent={async (ch, idx) => {
+            const realIndex = (ch as any).originalIndex ?? (idx !== undefined ? idx + 1 : 1);
             const res = await fetch('/api/qimao/chapter/preview', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -610,7 +612,7 @@ export const QimaoView: React.FC<QimaoViewProps> = ({
                 author: currentBook?.author,
                 itemId: ch.item_id,
                 title: ch.title,
-                chapterIndex: idx || (ch as any).originalIndex || 1
+                chapterIndex: realIndex
               })
             });
             const data = await res.json();
