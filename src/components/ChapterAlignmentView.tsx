@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Columns,
   Rows3,
@@ -130,18 +130,60 @@ Tên thủ lĩnh áo đen kinh hoàng tột độ, thế nhưng còn chưa kịp
 Thần ngọc dung hợp vào cơ thể Lâm Vân, kinh mạch tái sinh, một luồng long hồn chi lực vô cùng vô tận điên cuồng thức tỉnh trong đan điền hắn!`;
 
 export const ChapterAlignmentView: React.FC = () => {
-  const [rawText, setRawText] = useState<string>('');
-  const [transText, setTransText] = useState<string>('');
-  const [isAnalyzed, setIsAnalyzed] = useState<boolean>(false);
-  const [activeChapterIndex, setActiveChapterIndex] = useState<number>(0);
+  const [rawText, setRawText] = useState<string>(() => {
+    try { return localStorage.getItem('align_raw_text') || ''; } catch { return ''; }
+  });
+  const [transText, setTransText] = useState<string>(() => {
+    try { return localStorage.getItem('align_trans_text') || ''; } catch { return ''; }
+  });
+  const [isAnalyzed, setIsAnalyzed] = useState<boolean>(() => {
+    try { return localStorage.getItem('align_is_analyzed') === 'true'; } catch { return false; }
+  });
+  const [activeChapterIndex, setActiveChapterIndex] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('align_active_chapter');
+      return saved ? parseInt(saved, 10) || 0 : 0;
+    } catch { return 0; }
+  });
   const [viewMode, setViewMode] = useState<'columns' | 'interleaved'>('columns');
   const [theme, setTheme] = useState<'light' | 'sepia' | 'dark'>('light');
   const [fontSize, setFontSize] = useState<number>(16);
   const [syncScroll, setSyncScroll] = useState<boolean>(true);
-  const [transOffset, setTransOffset] = useState<number>(0);
+  const [transOffset, setTransOffset] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('align_trans_offset');
+      return saved ? parseInt(saved, 10) || 0 : 0;
+    } catch { return 0; }
+  });
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [activeParaHover, setActiveParaHover] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+
+  // Auto-save draft to localStorage whenever content or state changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('align_raw_text', rawText);
+      localStorage.setItem('align_trans_text', transText);
+      localStorage.setItem('align_is_analyzed', String(isAnalyzed));
+      localStorage.setItem('align_active_chapter', String(activeChapterIndex));
+      localStorage.setItem('align_trans_offset', String(transOffset));
+    } catch (e) {}
+  }, [rawText, transText, isAnalyzed, activeChapterIndex, transOffset]);
+
+  const handleClear = () => {
+    setRawText('');
+    setTransText('');
+    setIsAnalyzed(false);
+    setActiveChapterIndex(0);
+    setTransOffset(0);
+    try {
+      localStorage.removeItem('align_raw_text');
+      localStorage.removeItem('align_trans_text');
+      localStorage.removeItem('align_is_analyzed');
+      localStorage.removeItem('align_active_chapter');
+      localStorage.removeItem('align_trans_offset');
+    } catch (e) {}
+  };
 
   const leftScrollRef = useRef<HTMLDivElement>(null);
   const rightScrollRef = useRef<HTMLDivElement>(null);
@@ -302,23 +344,9 @@ export const ChapterAlignmentView: React.FC = () => {
           {/* Action Bar */}
           <div className="bg-white rounded-2xl p-3 border border-stone-200 shadow-xs flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  setRawText(SAMPLE_RAW);
-                  setTransText(SAMPLE_TRANS);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-stone-600 bg-stone-100 hover:bg-stone-200 transition-colors cursor-pointer"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                <span>Nạp mẫu</span>
-              </button>
-
               {(rawText || transText) && (
                 <button
-                  onClick={() => {
-                    setRawText('');
-                    setTransText('');
-                  }}
+                  onClick={handleClear}
                   className="px-3 py-1.5 rounded-lg text-xs font-medium text-stone-500 hover:text-red-600 transition-colors cursor-pointer"
                 >
                   Xóa
