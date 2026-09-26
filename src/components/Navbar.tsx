@@ -3,13 +3,14 @@ import {
   Bookmark,
   Download,
   FileText,
+  GitCompare,
   Image as ImageIcon,
   BookOpen,
   Languages,
   Lock
 } from 'lucide-react';
 
-export type StudioTab = 'downloader' | 'qimao' | 'align';
+export type StudioTab = 'downloader' | 'qimao' | 'align' | 'compare';
 
 interface NavbarProps {
   activeTab: StudioTab;
@@ -43,12 +44,12 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Module Switcher Tabs */}
-          <nav className="flex items-center bg-stone-100/90 p-1 rounded-xl border border-stone-200/80 gap-1">
+          <nav className="flex items-center bg-stone-100/90 p-1 rounded-xl border border-stone-200/80 gap-0.5 sm:gap-1">
             {/* Fanqie */}
             <button
               type="button"
               onClick={() => onTabChange('downloader')}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === 'downloader'
                   ? 'bg-white text-stone-900 shadow-xs border border-stone-200/60'
                   : 'text-stone-500 hover:text-stone-800 hover:bg-stone-200/50'
@@ -56,15 +57,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               id="tab-fanqie-downloader"
               title="Fanqie"
             >
-              <Download className={`w-3.5 h-3.5 ${activeTab === 'downloader' ? 'text-red-600' : 'text-stone-500'}`} />
-              <span className="hidden md:inline">Fanqie</span>
+              <Download className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'downloader' ? 'text-red-600' : 'text-stone-500'}`} />
+              <span>Fanqie</span>
             </button>
 
             {/* Qimao */}
             <button
               type="button"
               onClick={() => onTabChange('qimao')}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === 'qimao'
                   ? 'bg-white text-stone-900 shadow-xs border border-stone-200/60'
                   : 'text-stone-500 hover:text-stone-800 hover:bg-stone-200/50'
@@ -72,24 +73,40 @@ export const Navbar: React.FC<NavbarProps> = ({
               id="tab-qimao-downloader"
               title="Qimao"
             >
-              <BookOpen className={`w-3.5 h-3.5 ${activeTab === 'qimao' ? 'text-amber-600' : 'text-stone-500'}`} />
-              <span className="hidden md:inline">Qimao</span>
+              <BookOpen className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'qimao' ? 'text-amber-600' : 'text-stone-500'}`} />
+              <span>Qimao</span>
             </button>
 
             {/* Đối Chiếu */}
             <button
               type="button"
               onClick={() => onTabChange('align')}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === 'align'
                   ? 'bg-white text-stone-900 shadow-xs border border-stone-200/60'
                   : 'text-stone-500 hover:text-stone-800 hover:bg-stone-200/50'
               }`}
               id="tab-align"
-              title="Đối chiếu Raw - Dịch"
+              title="Đối chiếu"
             >
-              <Languages className={`w-3.5 h-3.5 ${activeTab === 'align' ? 'text-emerald-600' : 'text-stone-500'}`} />
-              <span className="hidden md:inline">Đối Chiếu</span>
+              <Languages className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'align' ? 'text-emerald-600' : 'text-stone-500'}`} />
+              <span>Đối Chiếu</span>
+            </button>
+
+            {/* So Sánh */}
+            <button
+              type="button"
+              onClick={() => onTabChange('compare')}
+              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'compare'
+                  ? 'bg-white text-stone-900 shadow-xs border border-stone-200/60'
+                  : 'text-stone-500 hover:text-stone-800 hover:bg-stone-200/50'
+              }`}
+              id="tab-compare"
+              title="So sánh"
+            >
+              <GitCompare className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'compare' ? 'text-indigo-600' : 'text-stone-500'}`} />
+              <span>So Sánh</span>
             </button>
           </nav>
         </div>
