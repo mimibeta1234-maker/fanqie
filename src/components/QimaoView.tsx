@@ -380,24 +380,6 @@ export const QimaoView: React.FC<QimaoViewProps> = ({
             )}
           </button>
         </form>
-
-        {/* Quick Suggestion Chips */}
-        <div className="flex flex-wrap items-center gap-1.5 pt-2.5 border-t border-stone-100 mt-3">
-          <span className="text-xs text-stone-400 font-medium">Gợi ý:</span>
-          {SUGGESTED_NOVELS.map((novel) => (
-            <button
-              key={novel.id}
-              type="button"
-              onClick={() => {
-                setInputVal(novel.id);
-                handleFetchBook(novel.id);
-              }}
-              className="px-2 py-0.5 text-xs bg-stone-100 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-300 text-stone-600 rounded border border-stone-200 transition-colors cursor-pointer"
-            >
-              {novel.name.split(' (')[0]}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* Error message */}

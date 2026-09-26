@@ -10,6 +10,7 @@ import { SavedBooksModal } from './components/SavedBooksModal';
 import { PlotSearchModal } from './components/PlotSearchModal';
 import { CompareView } from './components/CompareView';
 import { QimaoView } from './components/QimaoView';
+import { ChapterAlignmentView } from './components/ChapterAlignmentView';
 import { Book, Catalog, Chapter, DownloadTaskStatus, SavedBook } from './types';
 import { getSavedBooks, saveBook, removeSavedBook, isBookSaved } from './utils/savedBooks';
 import { ChapterBookmark, getBookmarks, toggleChapterBookmark } from './utils/chapterBookmarks';
@@ -23,11 +24,11 @@ export default function App() {
   // Authentication gate
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => isUserAuthenticated());
 
-  // Studio navigation tab: 'downloader' | 'qimao' | 'compare'
+  // Studio navigation tab: 'downloader' | 'qimao' | 'align'
   const [activeTab, setActiveTab] = useState<StudioTab>(() => {
     try {
       const saved = localStorage.getItem('fanqie_active_tab') as StudioTab;
-      if (saved && ['downloader', 'qimao', 'compare'].includes(saved)) {
+      if (saved && ['downloader', 'qimao', 'align'].includes(saved)) {
         return saved;
       }
     } catch (e) {}
@@ -382,7 +383,7 @@ export default function App() {
         onOpenChapterTitlesModal={() => setIsChapterTitlesOpen(true)}
       />
 
-      <main className={`flex-1 w-full mx-auto px-4 py-6 ${activeTab === 'compare' ? 'max-w-5xl' : 'max-w-2xl space-y-4'}`}>
+      <main className={`flex-1 w-full mx-auto px-4 py-6 ${activeTab === 'compare' || activeTab === 'align' ? 'max-w-6xl' : 'max-w-2xl space-y-4'}`}>
         {activeTab === 'downloader' ? (
           <>
             {/* Search Bar */}
@@ -446,8 +447,8 @@ export default function App() {
             onSavedBooksUpdate={() => setSavedBooks(getSavedBooks())}
           />
         ) : (
-          /* Compare Tool View */
-          <CompareView />
+          /* Multi-Chapter Raw - Translation Alignment View */
+          <ChapterAlignmentView />
         )}
       </main>
 

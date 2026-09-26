@@ -186,60 +186,50 @@ export const CompareView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-4 font-sans text-stone-900" id="compare-container">
-      {/* Top Header Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-xl border border-stone-200 shadow-xs">
-        <div className="flex items-center gap-2.5">
-          <GitCompare className="w-5 h-5 text-red-600 shrink-0" />
-          <h2 className="text-lg font-bold text-stone-900 tracking-tight">So Sánh Văn Bản</h2>
-          {isProcessing ? (
-            <span className="flex items-center gap-1 text-xs text-stone-400 bg-stone-50 px-2 py-0.5 rounded-full border border-stone-200">
-              <Loader2 className="w-3 h-3 animate-spin text-red-600" />
-              <span>Đang tính toán...</span>
-            </span>
-          ) : (textA || textB) ? (
-            <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 font-medium" title="Nội dung đang được tự động lưu nháp liên tục">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Tự động lưu nháp</span>
-            </span>
-          ) : null}
-        </div>
+    <div className="space-y-3 font-sans text-stone-900" id="compare-container">
+      {(textA || textB) && (
+        <div className="flex items-center justify-between gap-2 px-1">
+          <div className="flex items-center gap-2">
+            {isProcessing ? (
+              <span className="flex items-center gap-1 text-xs text-stone-400">
+                <Loader2 className="w-3 h-3 animate-spin text-red-600" />
+                <span>Đang tính toán...</span>
+              </span>
+            ) : null}
+          </div>
 
-        <div className="flex items-center gap-2">
-          {(textA || textB) && (
-            <>
-              {result && (
-                <button
-                  type="button"
-                  onClick={() => setIsInputsExpanded(!isInputsExpanded)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-stone-600 bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-lg transition-colors cursor-pointer"
-                >
-                  {isInputsExpanded ? (
-                    <>
-                      <ChevronUp className="w-3.5 h-3.5" />
-                      <span>Thu gọn ô nhập</span>
-                    </>
-                  ) : (
-                    <>
-                      <ChevronDown className="w-3.5 h-3.5" />
-                      <span>Hiện ô nhập</span>
-                    </>
-                  )}
-                </button>
-              )}
-
+          <div className="flex items-center gap-2 ml-auto">
+            {result && (
               <button
-                onClick={handleReset}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-stone-600 hover:text-red-700 bg-stone-100 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                title="Xóa cả 2 văn bản để làm mới"
+                type="button"
+                onClick={() => setIsInputsExpanded(!isInputsExpanded)}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-stone-600 bg-white hover:bg-stone-100 border border-stone-200 rounded-lg transition-colors cursor-pointer"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Làm mới</span>
+                {isInputsExpanded ? (
+                  <>
+                    <ChevronUp className="w-3.5 h-3.5" />
+                    <span>Thu gọn ô nhập</span>
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="w-3.5 h-3.5" />
+                    <span>Hiện ô nhập</span>
+                  </>
+                )}
               </button>
-            </>
-          )}
+            )}
+
+            <button
+              onClick={handleReset}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-stone-600 hover:text-red-700 bg-white hover:bg-red-50 border border-stone-200 rounded-lg transition-colors cursor-pointer"
+              title="Xóa cả 2 văn bản để làm mới"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Làm mới</span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Restored Draft Banner */}
       {restoredFromDraft && (textA || textB) && (

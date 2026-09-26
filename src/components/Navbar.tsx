@@ -1,7 +1,15 @@
 import React from 'react';
-import { Bookmark, Download, FileText, GitCompare, Image as ImageIcon, BookOpen, BookmarkCheck } from 'lucide-react';
+import {
+  Bookmark,
+  Download,
+  FileText,
+  Image as ImageIcon,
+  BookOpen,
+  Languages,
+  Lock
+} from 'lucide-react';
 
-export type StudioTab = 'downloader' | 'qimao' | 'compare';
+export type StudioTab = 'downloader' | 'qimao' | 'align';
 
 interface NavbarProps {
   activeTab: StudioTab;
@@ -23,117 +31,125 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenChapterTitlesModal
 }) => {
   return (
-    <header className="border-b border-stone-200 bg-white/90 backdrop-blur-md sticky top-0 z-30" id="main-header">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-        {/* Brand: Studio */}
-        <div className="flex items-center gap-5">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-stone-900 text-white flex items-center justify-center font-bold text-sm shadow-xs tracking-wider">
+    <header className="border-b border-stone-200 bg-white/95 backdrop-blur-md sticky top-0 z-30" id="main-header">
+      <div className="max-w-6xl mx-auto px-3 sm:px-6 h-14 flex items-center justify-between gap-2">
+        {/* Brand & Main Navigation */}
+        <div className="flex items-center gap-3 sm:gap-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-stone-900 to-stone-800 text-white flex items-center justify-center font-black text-sm shadow-xs">
               S
             </div>
-            <div className="flex items-baseline gap-1.5">
-              <h1 className="text-base font-bold text-stone-900 tracking-tight">Studio</h1>
-            </div>
+            <span className="text-sm font-black text-stone-900 tracking-tight hidden xs:inline">Studio</span>
           </div>
 
-          {/* Module Switcher Tabs: Fanqie Downloader | Qimao Downloader | Scribd Downloader | So Sánh */}
-          <nav className="flex items-center bg-stone-100/90 p-1 rounded-xl border border-stone-200/80 gap-0.5">
+          {/* Module Switcher Tabs */}
+          <nav className="flex items-center bg-stone-100/90 p-1 rounded-xl border border-stone-200/80 gap-1">
+            {/* Fanqie */}
             <button
               type="button"
               onClick={() => onTabChange('downloader')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === 'downloader'
                   ? 'bg-white text-stone-900 shadow-xs border border-stone-200/60'
-                  : 'text-stone-500 hover:text-stone-800'
+                  : 'text-stone-500 hover:text-stone-800 hover:bg-stone-200/50'
               }`}
               id="tab-fanqie-downloader"
+              title="Fanqie"
             >
-              <Download className="w-3.5 h-3.5 text-red-600" />
-              <span>Fanqie Downloader</span>
+              <Download className={`w-3.5 h-3.5 ${activeTab === 'downloader' ? 'text-red-600' : 'text-stone-500'}`} />
+              <span className="hidden md:inline">Fanqie</span>
             </button>
 
+            {/* Qimao */}
             <button
               type="button"
               onClick={() => onTabChange('qimao')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === 'qimao'
                   ? 'bg-white text-stone-900 shadow-xs border border-stone-200/60'
-                  : 'text-stone-500 hover:text-stone-800'
+                  : 'text-stone-500 hover:text-stone-800 hover:bg-stone-200/50'
               }`}
               id="tab-qimao-downloader"
+              title="Qimao"
             >
-              <BookOpen className="w-3.5 h-3.5 text-amber-600" />
-              <span>Qimao Downloader</span>
+              <BookOpen className={`w-3.5 h-3.5 ${activeTab === 'qimao' ? 'text-amber-600' : 'text-stone-500'}`} />
+              <span className="hidden md:inline">Qimao</span>
             </button>
 
+            {/* Đối Chiếu */}
             <button
               type="button"
-              onClick={() => onTabChange('compare')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                activeTab === 'compare'
+              onClick={() => onTabChange('align')}
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'align'
                   ? 'bg-white text-stone-900 shadow-xs border border-stone-200/60'
-                  : 'text-stone-500 hover:text-stone-800'
+                  : 'text-stone-500 hover:text-stone-800 hover:bg-stone-200/50'
               }`}
-              id="tab-compare"
+              id="tab-align"
+              title="Đối chiếu Raw - Dịch"
             >
-              <GitCompare className="w-3.5 h-3.5 text-stone-700" />
-              <span>So Sánh Văn Bản</span>
+              <Languages className={`w-3.5 h-3.5 ${activeTab === 'align' ? 'text-emerald-600' : 'text-stone-500'}`} />
+              <span className="hidden md:inline">Đối Chiếu</span>
             </button>
           </nav>
         </div>
 
-        {/* Right tools */}
-        <div className="flex items-center gap-2">
+        {/* Right Tools: Icon-Only */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Tiêu đề chương */}
           {onOpenChapterTitlesModal && (
             <button
               onClick={onOpenChapterTitlesModal}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-colors cursor-pointer"
+              className="p-2 sm:p-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/80 transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
               id="btn-nav-chapter-titles"
-              title="Trích xuất danh sách tiêu đề chương tuần tự"
+              title="Tiêu đề chương"
+              aria-label="Tiêu đề chương"
             >
-              <FileText className="w-3.5 h-3.5 text-rose-600" />
-              <span className="hidden sm:inline">Tiêu đề chương</span>
+              <FileText className="w-4 h-4 text-rose-600" />
             </button>
           )}
 
+          {/* Bìa HD Fanqie */}
           {onOpenHdCoverModal && (
             <button
               onClick={onOpenHdCoverModal}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 transition-colors cursor-pointer"
+              className="p-2 sm:p-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200/80 transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
               id="btn-nav-hd-cover"
-              title="Trích xuất và tải bìa gốc Ultra HD Fanqie"
+              title="Bìa HD"
+              aria-label="Bìa HD"
             >
-              <ImageIcon className="w-3.5 h-3.5 text-red-600" />
-              <span className="hidden sm:inline">Bìa HD Fanqie</span>
-              <span className="sm:hidden">Bìa HD</span>
+              <ImageIcon className="w-4 h-4 text-red-600" />
             </button>
           )}
 
-          {(activeTab === 'downloader' || activeTab === 'qimao') && onOpenSavedBooks && (
+          {/* Truyện đã lưu */}
+          {onOpenSavedBooks && (
             <button
               onClick={onOpenSavedBooks}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-stone-50 hover:bg-stone-100 text-stone-700 border border-stone-200 transition-colors cursor-pointer"
+              className="relative p-2 sm:p-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200/80 transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
               id="btn-nav-saved-books"
-              title="Xem danh sách truyện đã lưu"
+              title="Truyện đã lưu"
+              aria-label="Truyện đã lưu"
             >
-              <Bookmark className="w-3.5 h-3.5 text-amber-600 fill-amber-500" />
-              <span>Truyện đã lưu</span>
+              <Bookmark className="w-4 h-4 text-amber-600 fill-amber-500" />
               {savedCount > 0 && (
-                <span className="ml-0.5 px-1.5 py-0.2 bg-amber-100 text-amber-800 rounded-full font-bold text-[10px]">
+                <span className="absolute -top-1 -right-1 px-1.5 py-0.2 bg-amber-500 text-white rounded-full font-bold text-[9px] shadow-xs">
                   {savedCount}
                 </span>
               )}
             </button>
           )}
 
+          {/* Lock / Logout */}
           {onLogout && (
             <button
               onClick={onLogout}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
+              className="p-2 sm:p-2.5 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-100 border border-transparent hover:border-stone-200 transition-all cursor-pointer"
               id="btn-nav-lock"
-              title="Khóa lại"
+              title="Khóa"
+              aria-label="Khóa"
             >
-              <span>Khóa</span>
+              <Lock className="w-4 h-4" />
             </button>
           )}
         </div>
