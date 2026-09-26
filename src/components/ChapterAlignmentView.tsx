@@ -28,14 +28,24 @@ export interface AlignedChapter {
   transParas: string[];
 }
 
-const CHINESE_CHAPTER_REGEX = /^[\s*_#=\-\[\(【《]*\b(?:第\s*[0-9一二三四五六七八九十百千万]+\s*[章回节卷]|Chapter\s*\d+|[0-9]{1,5}\s*[.、\s\-_–—:：])/i;
-const VIETNAMESE_CHAPTER_REGEX = /^[\s*_#=\-\[\(【《]*\b(?:Chương|chuong|CHƯƠNG|CHUONG|Cương|cương|Hồi|hồi|Tiết|tiết|Quyển|quyển|Chapter|chapter|Chap|chap|Bài|bài|C\.|C)\s*([0-9一二三四五六七八九十百千万IVXLCDM]+|[0-9]+)\b|^[\s*_#=\-\[\(【《]*\b\d{1,5}\b\s*[:.、\-_–—\s]/i;
+const CHINESE_CHAPTER_REGEX = /^[\s*_#=\-\[\(【《]*第\s*[0-9一二三四五六七八九十百千万]+\s*[章回节卷]|^[\s*_#=\-\[\(【《]*(?:Chapter|Chap)\s*\d+/i;
+const VIETNAMESE_CHAPTER_REGEX = /^[\s*_#=\-\[\(【《]*(?:Chương|chuong|CHƯƠNG|CHUONG|Cương|cương|Chapter|chapter|Chap|chap)\s*([0-9一二三四五六七八九十百千万IVXLCDM]+|[0-9]+)\b/i;
 
 function splitTextIntoChapters(text: string, isChinese: boolean): { title: string; content: string }[] {
   if (!text.trim()) return [];
 
   const lines = text.split(/\r?\n/);
-  const regex = isChinese ? CHINESE_CHAPTER_REGEX : VIETNAMESE_CHAPTER_REGEX;
+  const strictRegex = isChinese ? CHINESE_CHAPTER_REGEX : VIETNAMESE_CHAPTER_REGEX;
+
+  // Check if text has any explicit chapter keyword lines
+  const hasStrictKeywords = lines.some(l => {
+    const clean = l.replace(/[\u00A0\u3000\t]+/g, ' ').trim();
+    return clean.length <= 250 && strictRegex.test(clean);
+  });
+
+  const fallbackNumberRegex = isChinese 
+    ? /^[\s*_#=\-\[\(【《]*[0-9]{1,5}\s*[.、\s\-_–—:：]/ 
+    : /^[\s*_#=\-\[\(【《]*[0-9]{1,5}\s*[:.、\-_–—\s][a-zA-Zà-ỹÀ-Ỹ0-9]/;
 
   const chapters: { title: string; content: string }[] = [];
   let currentTitle = '';
@@ -44,34 +54,38 @@ function splitTextIntoChapters(text: string, isChinese: boolean): { title: strin
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i];
     const cleanLine = rawLine.replace(/[\u00A0\u3000\t]+/g, ' ').trim();
-    const stripped = cleanLine.replace(/^[\s*_#=\-\[\(【《]+/, '').trim();
+    if (!cleanLine) continue;
 
-    const isHeading = cleanLine.length > 0 && cleanLine.length <= 250 && (
-      regex.test(cleanLine) ||
-      (isChinese && /^[0-9]{1,4}\s*[\u4e00-\u9fa5]/.test(stripped)) ||
-      (!isChinese && /^(?:chương|chuong|cương|hồi|tiết|quyển|chapter|chap)\b/i.test(stripped)) ||
-      (!isChinese && /^[0-9]{1,4}\s*[:.、\-_–—]\s*[a-zA-Zà-ỹÀ-Ỹ0-9]/.test(stripped))
+    const isHeading = cleanLine.length <= 250 && (
+      strictRegex.test(cleanLine) ||
+      (!hasStrictKeywords && fallbackNumberRegex.test(cleanLine))
     );
 
     if (isHeading) {
-      if (currentTitle || currentLines.length > 0) {
+      if (currentTitle) {
         chapters.push({
-          title: currentTitle || `Chương ${chapters.length + 1}`,
+          title: currentTitle,
           content: currentLines.join('\n').trim()
         });
+        currentLines = [];
+      } else {
+        // Discard preamble lines before the first real chapter heading
         currentLines = [];
       }
       currentTitle = cleanLine;
     } else {
-      if (cleanLine) {
-        currentLines.push(cleanLine);
-      }
+      currentLines.push(cleanLine);
     }
   }
 
-  if (currentTitle || currentLines.length > 0) {
+  if (currentTitle) {
     chapters.push({
-      title: currentTitle || `Chương ${chapters.length + 1}`,
+      title: currentTitle,
+      content: currentLines.join('\n').trim()
+    });
+  } else if (currentLines.length > 0) {
+    chapters.push({
+      title: isChinese ? '第1章' : 'Chương 1',
       content: currentLines.join('\n').trim()
     });
   }
